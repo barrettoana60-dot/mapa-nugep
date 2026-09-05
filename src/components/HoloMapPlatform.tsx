@@ -10,7 +10,7 @@ import {
   FileSpreadsheet, Edit3, Save, Sun, Moon, 
   RotateCcw, Hexagon, Globe, Building2, CloudSun,
   CheckCircle2, AlertCircle, FileText, MousePointer, Landmark,
-  Printer, ShieldCheck, Undo2, ChevronRight, Cloud
+  Printer, ShieldCheck, Undo2, ChevronRight
 } from 'lucide-react';
 
 // Tipagem dos Pontos Georreferenciados
@@ -122,21 +122,15 @@ export default function HoloMapPlatform() {
   const [exportTarget, setExportTarget] = useState<'territory' | 'point'>('territory');
   const [territoriesListTab, setTerritoriesListTab] = useState<'territories' | 'points'>('territories');
 
-  // URL para camada de nuvens de satélite em tempo real (RainViewer / Fallback)
-  const [cloudTileUrl, setCloudTileUrl] = useState<string>(
-    'https://tilecache.rainviewer.com/v2/satellite/1715000000/256/{z}/{x}/{y}/0/0_0.png'
-  );
-
   // Modos de ferramentas
   const [activeTool, setActiveTool] = useState<'navigate' | 'point' | 'measure' | 'polygon'>('navigate');
 
-  // Camadas 3D (com nuvens e prédios ativados por padrão)
+  // Camadas 3D (prédios, satélite e relevo ativados por padrão)
   const [activeLayers, setActiveLayers] = useState<string[]>([
     'relevo',
     'buildings',
     'satellite',
     'atmosphere',
-    'clouds',
     'territories',
     'markers'
   ]);
@@ -183,19 +177,6 @@ export default function HoloMapPlatform() {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
-
-  // Buscar última timestamp de satélite de nuvens do RainViewer na inicialização
-  useEffect(() => {
-    fetch('https://api.rainviewer.com/public/weather-maps.json')
-      .then(r => r.json())
-      .then(data => {
-        if (data?.satellite?.infrared?.length) {
-          const latest = data.satellite.infrared[data.satellite.infrared.length - 1];
-          setCloudTileUrl(`${data.host}${latest.path}/256/{z}/{x}/{y}/0/0_0.png`);
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   // Carregar dados salvos do localStorage
   useEffect(() => {
@@ -259,62 +240,185 @@ export default function HoloMapPlatform() {
       : 'mapbox://styles/mapbox/dark-v11';
   }, [activeLayers, theme]);
 
-  // Busca por endereço ou coordenada
+  // Parser inteligente de coordenadas geográficas
+  const parseCoordinates = (input: string): [number, number] | null => {
+    const clean = input.trim();
+    const match = clean.match(/^([-+]?\d{1,2}(?:[.,]\d+)?)[,\s;]+([-+]?\d{1,3}(?:[.,]\d+)?)$/);
+    if (match) {
+      let lat = parseFloat(match[1].replace(',', '.'));
+      let lng = parseFloat(match[2].replace(',', '.'));
+      // Se o usuário digitou [lng, lat] (ex: -36.06, -9.17), corrigir automaticamente
+      if (Math.abs(lat) > 35 && Math.abs(lng) <= 35) {
+        const temp = lat;
+        lat = lng;
+        lng = temp;
+      }
+      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        return [lng, lat]; // [longitude, latitude] para o Mapbox
+      }
+    }
+    return null;
+  };
+
+  // Buscar sugestões de endereço via Photon (OpenStreetMap com CORS aberto e alta disponibilidade)
+  const fetchAddressSuggestions = async (query: string): Promise<any[]> => {
+    const q = query.trim();
+    if (!q || q.length < 2) return [];
+
+    const coords = parseCoordinates(q);
+    if (coords) {
+      return [{
+        id: 'coord_exact',
+        text: 'Coordenada Geográfica',
+        place_name: `Latitude: ${coords[1].toFixed(6)}°, Longitude: ${coords[0].toFixed(6)}°`,
+        center: coords,
+        isCoord: true
+      }];
+    }
+
+    // 1. Photon (Komoot / OSM)
+    try {
+      const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=default`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.features && data.features.length > 0) {
+          return data.features.map((f: any, idx: number) => {
+            const p = f.properties || {};
+            const streetInfo = p.street ? `${p.street}${p.housenumber ? ', ' + p.housenumber : ''}` : '';
+            const locality = [p.district || p.suburb, p.city, p.state, p.country].filter(Boolean).join(', ');
+            const title = p.name || streetInfo || p.city || 'Localidade';
+            const subtitle = [streetInfo, locality].filter(Boolean).join(' • ') || p.country || '';
+            return {
+              id: `photon_${idx}_${p.osm_id || Date.now()}`,
+              text: title,
+              place_name: subtitle ? `${title} — ${subtitle}` : title,
+              center: f.geometry.coordinates as [number, number] // [lng, lat]
+            };
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Photon falhou, tentando fallback:', e);
+    }
+
+    // 2. Fallback: Nominatim OpenStreetMap
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=1`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          return data.map((item: any) => ({
+            id: `osm_${item.place_id}`,
+            text: item.name || item.display_name.split(',')[0],
+            place_name: item.display_name,
+            center: [parseFloat(item.lon), parseFloat(item.lat)] as [number, number]
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn('Fallback Nominatim falhou:', e);
+    }
+
+    // 3. Fallback: Mapbox Geocoding (se o token tiver permissão)
+    try {
+      const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${MAPBOX_TOKEN}&limit=5&language=pt`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.features && data.features.length > 0) {
+          return data.features.map((f: any) => ({
+            id: f.id,
+            text: f.text,
+            place_name: f.place_name,
+            center: f.center as [number, number]
+          }));
+        }
+      }
+    } catch (e) {}
+
+    return [];
+  };
+
+  // Busca por endereço ou coordenada com debounce
   const handleSearchInput = (value: string) => {
     setSearchQuery(value);
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
 
-    if (value.trim().length < 2) {
-      setSearchSuggestions([]);
-      setShowSearchDropdown(false);
-      return;
-    }
-
-    setShowSearchDropdown(true);
-
-    if (/^-?\d+[\.,]\d+[\s,;]+-?\d+[\.,]\d+$/.test(value.trim())) {
+    const coords = parseCoordinates(value);
+    if (coords) {
       setSearchSuggestions([{
         id: 'coord_exact',
         text: 'Coordenada Geográfica',
-        place_name: value.trim(),
+        place_name: `Lat: ${coords[1].toFixed(6)}°, Lng: ${coords[0].toFixed(6)}° (Pressione Enter para ir)`,
+        center: coords,
         isCoord: true
       }]);
+      setShowSearchDropdown(true);
       return;
     }
 
+    if (value.trim().length < 2) {
+      setSearchSuggestions([]);
+      setShowSearchDropdown(false);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    setShowSearchDropdown(true);
+
     searchTimeoutRef.current = setTimeout(async () => {
       try {
-        setIsSearching(true);
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(value)}&countrycodes=br&format=json&limit=5`);
-        const data = await res.json();
-        if (data && Array.isArray(data)) {
-          setSearchSuggestions(data.map((item: any) => ({
-            id: item.place_id,
-            text: item.name || item.display_name.split(',')[0],
-            place_name: item.display_name,
-            center: [parseFloat(item.lon), parseFloat(item.lat)]
-          })));
-        }
+        const results = await fetchAddressSuggestions(value);
+        setSearchSuggestions(results);
       } catch (err) {
         console.error(err);
       } finally {
         setIsSearching(false);
       }
-    }, 400);
+    }, 300);
+  };
+
+  // Submeter busca ao pressionar Enter ou clicar no botão de busca
+  const handleSearchSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!searchQuery.trim()) return;
+
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+
+    const coords = parseCoordinates(searchQuery);
+    if (coords) {
+      setViewState(prev => ({ ...prev, longitude: coords[0], latitude: coords[1], zoom: 16, pitch: 58 }));
+      setShowSearchDropdown(false);
+      showToast(`Localizado: ${coords[1].toFixed(5)}°, ${coords[0].toFixed(5)}°`, 'success');
+      return;
+    }
+
+    if (searchSuggestions.length > 0) {
+      handleSelectSuggestion(searchSuggestions[0]);
+      return;
+    }
+
+    try {
+      setIsSearching(true);
+      const results = await fetchAddressSuggestions(searchQuery);
+      if (results.length > 0) {
+        handleSelectSuggestion(results[0]);
+      } else {
+        showToast('Nenhum endereço encontrado para esta busca.', 'error');
+      }
+    } catch (err) {
+      showToast('Erro ao buscar endereço.', 'error');
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   const handleSelectSuggestion = (item: any) => {
     setShowSearchDropdown(false);
-    if (item.isCoord) {
-      const parts = item.place_name.trim().split(/[\s,;]+/).filter(Boolean);
-      const lat = parseCoord(parts[0]);
-      const lng = parseCoord(parts[1]);
-      setViewState(prev => ({ ...prev, longitude: lng, latitude: lat, zoom: 16, pitch: 58 }));
-      showToast(`Localizado: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
-    } else {
+    if (item.center && Array.isArray(item.center)) {
       const [lng, lat] = item.center;
       setViewState(prev => ({ ...prev, longitude: lng, latitude: lat, zoom: 16, pitch: 58 }));
-      showToast(`Localizado: ${item.text}`);
+      showToast(`Localizado: ${item.text}`, 'success');
     }
   };
 
@@ -628,43 +732,9 @@ export default function HoloMapPlatform() {
     setActiveModal(null);
   };
 
-  // Voos Rápidos de Demonstração 3D
-  const flyToPreset = (preset: 'sp_buildings' | 'mountains' | 'globe_clouds' | 'nugep') => {
-    if (preset === 'sp_buildings') {
-      // São Paulo / Av. Paulista: centenas de arranha-céus em 3D
-      setViewState({
-        longitude: -46.654,
-        latitude: -23.563,
-        zoom: 16.5,
-        pitch: 62,
-        bearing: 40
-      });
-      if (!activeLayers.includes('buildings')) setActiveLayers(prev => [...prev, 'buildings']);
-      showToast('Explorando Edificações 3D (São Paulo)', 'info');
-    } else if (preset === 'mountains') {
-      // Serra dos Órgãos / Dedo de Deus: relevo montanhoso dramático
-      setViewState({
-        longitude: -42.995,
-        latitude: -22.455,
-        zoom: 13.8,
-        pitch: 68,
-        bearing: 25
-      });
-      if (!activeLayers.includes('relevo')) setActiveLayers(prev => [...prev, 'relevo']);
-      showToast('Explorando Alto Relevo DEM 3D (Serra dos Órgãos)', 'info');
-    } else if (preset === 'globe_clouds') {
-      // Visão orbital do globo com nuvens e estrelas
-      setViewState({
-        longitude: -36.0,
-        latitude: -9.0,
-        zoom: 2.8,
-        pitch: 45,
-        bearing: 0
-      });
-      if (!activeLayers.includes('clouds')) setActiveLayers(prev => [...prev, 'clouds']);
-      if (!activeLayers.includes('atmosphere')) setActiveLayers(prev => [...prev, 'atmosphere']);
-      showToast('Visão Orbital: Nuvens e Atmosfera 3D', 'info');
-    } else if (preset === 'nugep') {
+  // Centralizar no Território NUGEP
+  const flyToPreset = (preset: 'nugep') => {
+    if (preset === 'nugep') {
       setViewState({
         longitude: -36.065,
         latitude: -9.17,
@@ -742,6 +812,12 @@ export default function HoloMapPlatform() {
   const themeClass = isDark ? 'theme-dark' : 'theme-light';
   const scaleClass = uiScale === 'compact' ? 'scale-compact' : uiScale === 'expanded' ? 'scale-expanded' : 'scale-standard';
 
+  const uiZoomStyle = useMemo(() => {
+    if (uiScale === 'compact') return { zoom: 0.85 };
+    if (uiScale === 'expanded') return { zoom: 1.18 };
+    return { zoom: 1 };
+  }, [uiScale]);
+
   return (
     <div className={`w-full h-[100dvh] flex flex-col font-sans select-none overflow-hidden relative ${themeClass} ${scaleClass} ${isDark ? 'bg-[#06080C] text-gray-100' : 'bg-[#f4f6f9] text-gray-900'} print:h-auto print:overflow-visible`}>
       
@@ -758,7 +834,10 @@ export default function HoloMapPlatform() {
       {/* =========================================================================
           BARRA SUPERIOR RESPONSIVA: BRANDING + BUSCA
           ========================================================================= */}
-      <div className="absolute top-2 sm:top-4 inset-x-2 sm:inset-x-4 z-30 flex items-center justify-between gap-2 sm:gap-4 pointer-events-none">
+      <div 
+        style={uiZoomStyle}
+        className="ui-scale-target absolute top-2 sm:top-4 inset-x-2 sm:inset-x-4 z-30 flex items-center justify-between gap-2 sm:gap-4 pointer-events-none origin-top"
+      >
         {/* BRANDING: NUGEP MAPS + LOGO DO MUSEU */}
         <div 
           onClick={() => flyToPreset('nugep')}
@@ -777,15 +856,16 @@ export default function HoloMapPlatform() {
         {/* BARRA DE BUSCA CENTRAL SUSPENSA NO MAPA */}
         <div className="flex-1 max-w-[460px] pointer-events-auto relative">
           <form 
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (searchSuggestions.length > 0) handleSelectSuggestion(searchSuggestions[0]);
-            }}
+            onSubmit={handleSearchSubmit}
             className="liquid-glass rounded-2xl p-1 sm:p-1.5 flex items-center gap-1.5 sm:gap-2 border border-white/20 shadow-2xl transition-all focus-within:border-[#A67C52]"
           >
-            <div className="pl-2 sm:pl-3 text-[#A67C52]">
+            <button 
+              type="submit" 
+              className="pl-2 sm:pl-3 text-[#A67C52] hover:scale-110 active:scale-95 transition-transform cursor-pointer focus:outline-none shrink-0"
+              title="Buscar no mapa (Enter)"
+            >
               <Search size={15} />
-            </div>
+            </button>
             <input
               ref={searchInputRef}
               type="text"
@@ -835,7 +915,10 @@ export default function HoloMapPlatform() {
       {/* =========================================================================
           TRILHO LATERAL ESQUERDO (DESKTOP) & BARRA INFERIOR DOCK (MOBILE)
           ========================================================================= */}
-      <nav className="fixed md:absolute bottom-2 md:bottom-4 inset-x-2 md:inset-x-auto md:left-4 md:top-20 md:w-12 h-13 md:h-auto z-40 liquid-glass rounded-2xl border border-white/15 shadow-2xl flex flex-row md:flex-col items-center justify-around md:justify-between px-2 py-1 md:px-0 md:py-3 pointer-events-auto">
+      <nav 
+        style={uiZoomStyle}
+        className="ui-scale-target fixed md:absolute bottom-2 md:bottom-4 inset-x-2 md:inset-x-auto md:left-4 md:top-20 md:w-12 h-13 md:h-auto z-40 liquid-glass rounded-2xl border border-white/15 shadow-2xl flex flex-row md:flex-col items-center justify-around md:justify-between px-2 py-1 md:px-0 md:py-3 pointer-events-auto origin-left"
+      >
         <div className="flex flex-row md:flex-col items-center gap-2 md:gap-3">
           {/* Territórios e Pontos Demarcados (Lista) */}
           <button
@@ -883,7 +966,7 @@ export default function HoloMapPlatform() {
                 ? 'bg-[#A67C52] text-white shadow-lg' 
                 : 'hover:bg-white/10 opacity-70 hover:opacity-100'
             }`}
-            title="Camadas 3D, Satélite e Nuvens"
+            title="Camadas 3D e Satélite"
           >
             <Layers size={18} />
           </button>
@@ -919,7 +1002,10 @@ export default function HoloMapPlatform() {
       {/* =========================================================================
           PALETA FLUTUANTE DE DESENHO / CARTOGRAFIA (DIREITA)
           ========================================================================= */}
-      <div className="absolute top-16 md:top-20 right-2 md:right-4 z-20 flex flex-col gap-2 pointer-events-auto">
+      <div 
+        style={uiZoomStyle}
+        className="ui-scale-target absolute top-16 md:top-20 right-2 md:right-4 z-20 flex flex-col gap-2 pointer-events-auto origin-top-right"
+      >
         <div className="liquid-glass rounded-2xl p-1.5 flex flex-col gap-1.5 border border-white/20 shadow-2xl">
           {/* Navegação Padrão */}
           <button
@@ -1025,7 +1111,10 @@ export default function HoloMapPlatform() {
           BARRA DE AÇÃO DA DEMARCAÇÃO EM ANDAMENTO (QUANDO ATIVA)
           ========================================================================= */}
       {activeTool === 'polygon' && (
-        <div className="fixed md:absolute bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-3xl p-3 sm:p-4 border border-[#A67C52]/60 shadow-2xl flex flex-col md:flex-row items-center gap-3 sm:gap-4 animate-in slide-in-from-bottom-4 duration-300 pointer-events-auto max-w-[95vw] md:max-w-[92vw]">
+        <div 
+          style={uiZoomStyle}
+          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-3xl p-3 sm:p-4 border border-[#A67C52]/60 shadow-2xl flex flex-col md:flex-row items-center gap-3 sm:gap-4 animate-in slide-in-from-bottom-4 duration-300 pointer-events-auto max-w-[95vw] md:max-w-[92vw]"
+        >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-[#A67C52]/30 border border-[#A67C52] flex items-center justify-center text-[#A67C52]">
               <Hexagon size={20} strokeWidth={2.5} />
@@ -1087,7 +1176,10 @@ export default function HoloMapPlatform() {
 
       {/* Régua de Medição */}
       {activeTool === 'measure' && measurementPoints.length > 0 && (
-        <div className="fixed md:absolute bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-2xl px-4 sm:px-5 py-2.5 sm:py-3 border border-white/20 shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4 pointer-events-auto">
+        <div 
+          style={uiZoomStyle}
+          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-2xl px-4 sm:px-5 py-2.5 sm:py-3 border border-white/20 shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4 pointer-events-auto"
+        >
           <div>
             <p className="text-[10px] uppercase tracking-widest opacity-60 font-bold">Distância Linear</p>
             <p className="text-xl font-light text-amber-400">
@@ -1146,20 +1238,6 @@ export default function HoloMapPlatform() {
             tileSize={512} 
             maxzoom={14} 
           />
-
-          {/* Camada de Nuvens em Tempo Real (Satélite) */}
-          {activeLayers.includes('clouds') && cloudTileUrl && (
-            <Source id="realtime-clouds" type="raster" tiles={[cloudTileUrl]} tileSize={256}>
-              <Layer
-                id="clouds-layer"
-                type="raster"
-                paint={{
-                  'raster-opacity': 0.72,
-                  'raster-fade-duration': 300
-                }}
-              />
-            </Source>
-          )}
 
           {/* Céu e Atmosfera 3D */}
           {activeLayers.includes('atmosphere') && (
@@ -1351,7 +1429,10 @@ export default function HoloMapPlatform() {
           PAINEL DO TERRITÓRIO DEMARCADO (COM SALVAR E EXPORTAR PDF DIRETO NELE!)
           ========================================================================= */}
       {activeTerritory && (
-        <aside className="fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-18 md:top-20 md:w-96 max-h-[75vh] md:max-h-none liquid-glass rounded-3xl p-5 sm:p-6 border border-[#A67C52]/50 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto">
+        <aside 
+          style={uiZoomStyle}
+          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-18 md:top-20 md:w-96 max-h-[75vh] md:max-h-none liquid-glass rounded-3xl p-5 sm:p-6 border border-[#A67C52]/50 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto origin-bottom-left md:origin-top-left"
+        >
           <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
             <div className="flex items-center gap-2">
               <div className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: activeTerritory.cor }} />
@@ -1472,7 +1553,10 @@ export default function HoloMapPlatform() {
 
       {/* PAINEL DE PROPRIEDADES DO PONTO */}
       {selectedPoint && (
-        <aside className="fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-18 md:top-20 md:w-96 max-h-[75vh] md:max-h-none liquid-glass rounded-3xl p-5 sm:p-6 border border-[#A67C52]/50 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto">
+        <aside 
+          style={uiZoomStyle}
+          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-18 md:top-20 md:w-96 max-h-[75vh] md:max-h-none liquid-glass rounded-3xl p-5 sm:p-6 border border-[#A67C52]/50 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto origin-bottom-left md:origin-top-left"
+        >
           <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
             <div className="flex items-center gap-2">
               <MapPin size={16} className="text-[#A67C52]" />
@@ -1603,7 +1687,10 @@ export default function HoloMapPlatform() {
       {/* 1. LISTA DE TERRITÓRIOS E PONTOS DEMARCADOS */}
       {activeModal === 'territories_list' && (
         <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
-          <div className="liquid-glass rounded-3xl p-5 sm:p-7 w-full max-w-lg border border-white/20 shadow-2xl relative max-h-[88vh] flex flex-col">
+          <div 
+            style={uiZoomStyle}
+            className="ui-scale-target liquid-glass rounded-3xl p-5 sm:p-7 w-full max-w-lg border border-white/20 shadow-2xl relative max-h-[88vh] flex flex-col"
+          >
             <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0 mb-3">
               <div className="flex items-center gap-2.5">
                 <Hexagon size={20} className="text-[#A67C52]" />
@@ -1761,7 +1848,10 @@ export default function HoloMapPlatform() {
       {/* 2. MODAL DE EXPORTAÇÃO DO DOSSIÊ COM MARCA D'ÁGUA DO NUGEP */}
       {activeModal === 'export_dossier' && (
         <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
-          <div className="liquid-glass rounded-3xl p-5 sm:p-8 w-full max-w-3xl max-h-[92vh] border border-[#A67C52]/50 shadow-2xl flex flex-col overflow-hidden relative watermark-nugep">
+          <div 
+            style={uiZoomStyle}
+            className="ui-scale-target liquid-glass rounded-3xl p-5 sm:p-8 w-full max-w-3xl max-h-[92vh] border border-[#A67C52]/50 shadow-2xl flex flex-col overflow-hidden relative watermark-nugep"
+          >
             
             <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-white/10 shrink-0">
               <div className="flex items-center gap-3">
@@ -1943,10 +2033,13 @@ export default function HoloMapPlatform() {
         </div>
       )}
 
-      {/* 3. MODAL DE CAMADAS 3D, SATÉLITE E NUVENS */}
+      {/* 3. MODAL DE CAMADAS 3D E SATÉLITE */}
       {activeModal === 'layers' && (
         <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="liquid-glass rounded-3xl p-6 w-full max-w-md border border-white/20 shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div 
+            style={uiZoomStyle}
+            className="ui-scale-target liquid-glass rounded-3xl p-6 w-full max-w-md border border-white/20 shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar"
+          >
             <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-5">
               <div className="flex items-center gap-2">
                 <Layers size={20} className="text-[#A67C52]" />
@@ -2013,23 +2106,6 @@ export default function HoloMapPlatform() {
                   </div>
                 </div>
 
-                {/* Nuvens em Tempo Real */}
-                <div 
-                  onClick={() => toggleLayer('clouds')}
-                  className="flex items-center justify-between p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition-all"
-                >
-                  <div className="flex items-center gap-3">
-                    <Cloud size={18} className="text-cyan-400" />
-                    <div>
-                      <p className="text-xs font-semibold">Nuvens 3D em Tempo Real</p>
-                      <p className="text-[10px] opacity-60">Cobertura de nuvens via satélite meteorológico</p>
-                    </div>
-                  </div>
-                  <div className={`w-10 h-6 rounded-full p-1 transition-colors ${activeLayers.includes('clouds') ? 'bg-[#A67C52]' : 'bg-white/20'}`}>
-                    <div className={`w-4 h-4 rounded-full bg-white transition-transform ${activeLayers.includes('clouds') ? 'translate-x-4' : ''}`} />
-                  </div>
-                </div>
-
                 {/* Céu e Atmosfera */}
                 <div 
                   onClick={() => toggleLayer('atmosphere')}
@@ -2072,7 +2148,10 @@ export default function HoloMapPlatform() {
       {/* 4. MODAL DE IMPORTAÇÃO DE PLANILHA */}
       {activeModal === 'spreadsheet' && parsedSpreadsheet && (
         <div className="absolute inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200">
-          <div className="liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-4xl max-h-[90vh] border border-white/20 shadow-2xl flex flex-col overflow-hidden">
+          <div 
+            style={uiZoomStyle}
+            className="ui-scale-target liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-4xl max-h-[90vh] border border-white/20 shadow-2xl flex flex-col overflow-hidden"
+          >
             <div className="flex items-center justify-between pb-4 border-b border-white/10 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
@@ -2212,7 +2291,10 @@ export default function HoloMapPlatform() {
       {/* 5. MODAL DE CONFIGURAÇÕES */}
       {activeModal === 'settings' && (
         <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-md border border-white/20 shadow-2xl relative">
+          <div 
+            style={uiZoomStyle}
+            className="ui-scale-target liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-md border border-white/20 shadow-2xl relative"
+          >
             <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-6">
               <div className="flex items-center gap-2">
                 <Settings size={20} className="text-[#A67C52]" />
@@ -2268,6 +2350,7 @@ export default function HoloMapPlatform() {
                       onClick={() => {
                         setUiScale(scale);
                         localStorage.setItem('nugep_ui_scale', scale);
+                        showToast(`Tamanho da interface: ${scale === 'compact' ? 'Compacto (85%)' : scale === 'expanded' ? 'Expandido (118%)' : 'Padrão (100%)'}`, 'info');
                       }}
                       className={`py-2 rounded-xl border text-xs font-semibold capitalize transition-all ${
                         uiScale === scale
@@ -2288,7 +2371,10 @@ export default function HoloMapPlatform() {
       {/* 6. MODAL SOBRE O SISTEMA */}
       {activeModal === 'info' && (
         <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-md border border-white/20 shadow-2xl relative">
+          <div 
+            style={uiZoomStyle}
+            className="ui-scale-target liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-md border border-white/20 shadow-2xl relative"
+          >
             <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
               <div className="flex items-center gap-2.5">
                 <Landmark size={22} color="#A67C52" />
@@ -2307,7 +2393,7 @@ export default function HoloMapPlatform() {
                 <p><span className="font-bold text-white">Sistema:</span> NUGEP MAPS</p>
                 <p><span className="font-bold text-white">Geodésia:</span> Datum SIRGAS 2000 / WGS 84</p>
                 <p><span className="font-bold text-white">Relevo:</span> DEM Topográfico 3D (1.8x)</p>
-                <p><span className="font-bold text-white">Nuvens & Satélite:</span> Cobertura de Nuvens em Tempo Real</p>
+                <p><span className="font-bold text-white">Satélite & Relevo:</span> Imagens de Alta Resolução e DEM 3D</p>
               </div>
             </div>
           </div>
