@@ -819,9 +819,11 @@ export default function HoloMapPlatform() {
   }, [uiScale]);
 
   return (
-    <div className={`w-full h-[100dvh] flex flex-col font-sans select-none overflow-hidden relative ${themeClass} ${scaleClass} ${isDark ? 'bg-[#06080C] text-gray-100' : 'bg-[#f4f6f9] text-gray-900'} print:h-auto print:overflow-visible`}>
+    <div className={`w-full h-[100dvh] flex flex-col font-sans select-none overflow-hidden relative ${themeClass} ${scaleClass} ${isDark ? 'bg-[#06080C] text-gray-100' : 'bg-[#f4f6f9] text-gray-900'} print:h-auto print:overflow-visible print:bg-white print:text-black`}>
       
-      {/* Toast Notification */}
+      {/* TODA A INTERFACE INTERATIVA DO SISTEMA (OCULTADA TOTALMENTE DURANTE A IMPRESSÃO DO PDF) */}
+      <div className="no-print w-full h-full relative overflow-hidden flex flex-col">
+        {/* Toast Notification */}
       {toast && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[200] px-5 py-3 rounded-2xl liquid-glass flex items-center gap-3 animate-in fade-in slide-in-from-top-3 duration-300 shadow-2xl border border-white/20">
           {toast.type === 'success' && <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />}
@@ -2399,88 +2401,105 @@ export default function HoloMapPlatform() {
           </div>
         </div>
       )}
+      </div>
 
       {/* =========================================================================
           DOCUMENTO OFICIAL PARA IMPRESSÃO EM PDF COM MARCA D'ÁGUA DO NUGEP
           ========================================================================= */}
-      <div className="print-only hidden print:block w-full text-black p-6 bg-white relative">
-        <div className="print-watermark">
-          NUGEP • NÚCLEO DE GESTÃO E PESQUISA{"\n"}
-          {exportTarget === 'point' ? 'MARCADOR GEORREFERENCIADO OFICIAL' : 'DEMARCAÇÃO TERRITORIAL OFICIAL'}
+      <div className="print-only hidden print:block w-full text-black p-4 sm:p-6 bg-white relative overflow-hidden">
+        {/* Marca d'Água Oficial NUGEP (embutida de forma controlada sem vazar página) */}
+        <div className="print-watermark-bg">
+          <div className="print-watermark-text">
+            NUGEP • NÚCLEO DE GESTÃO E PESQUISA{"\n"}
+            {exportTarget === 'point' ? 'MARCADOR GEORREFERENCIADO' : 'DEMARCAÇÃO TERRITORIAL'}
+          </div>
         </div>
 
-        <div className="border-b-4 border-[#A67C52] pb-4 mb-6 flex items-center justify-between relative z-10">
+        {/* CABEÇALHO OFICIAL */}
+        <div className="border-b-2 border-[#A67C52] pb-3 mb-3 flex items-center justify-between relative z-10">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl border-2 border-[#A67C52] flex items-center justify-center">
-              <Landmark size={28} color="#A67C52" strokeWidth={2} />
+            <div className="w-11 h-11 rounded-xl border border-[#A67C52] bg-[#A67C52]/10 flex items-center justify-center">
+              <Landmark size={24} color="#A67C52" strokeWidth={2.2} />
             </div>
             <div>
-              <h1 className="text-2xl font-black uppercase tracking-widest text-black">NUGEP MAPS</h1>
-              <h2 className="text-xs font-bold uppercase tracking-wider text-gray-600">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xl font-black tracking-widest text-black">NUGEP</span>
+                <span className="text-xl font-black tracking-widest text-[#A67C52]">MAPS</span>
+              </div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-600">
                 {exportTarget === 'point'
-                  ? 'Núcleo de Gestão e Pesquisa • Ficha de Registro de Ponto Georreferenciado'
-                  : 'Núcleo de Gestão e Pesquisa • Dossiê de Demarcação Territorial'}
-              </h2>
+                  ? 'Núcleo de Gestão e Pesquisa • Dossiê de Registro de Ponto Georreferenciado'
+                  : 'Núcleo de Gestão e Pesquisa • Dossiê de Demarcação Territorial Oficial'}
+              </p>
             </div>
           </div>
-          <div className="text-right text-xs font-mono text-gray-500">
-            <p>DATA: {new Date().toLocaleDateString('pt-BR')}</p>
-            <p>CERTIFICADO: DOS-NUGEP-{Date.now().toString().slice(-6)}</p>
+          <div className="text-right text-[9px] font-mono text-gray-600 space-y-0.5">
+            <p><span className="font-bold">DATA DE EMISSÃO:</span> {new Date().toLocaleDateString('pt-BR')}</p>
+            <p><span className="font-bold">CERTIFICADO:</span> DOS-NUGEP-{Date.now().toString().slice(-6)}</p>
+            <p><span className="font-bold">SISTEMA:</span> SIRGAS 2000 / WGS 84</p>
           </div>
         </div>
 
+        {/* SNAPSHOT DO MAPA CARTOGRÁFICO */}
         {printImage && (
-          <div className="w-full h-80 rounded-2xl overflow-hidden border border-gray-300 mb-6 shadow-inner relative z-10">
+          <div className="w-full h-48 rounded-xl overflow-hidden border border-gray-300 mb-3 shadow-sm relative z-10 bg-gray-100 print-page-break">
             <img src={printImage} alt="Mapa Cartográfico" className="w-full h-full object-cover" />
+            <div className="absolute bottom-2 right-2 px-2.5 py-0.5 rounded bg-white/90 border border-gray-300 text-[9px] font-mono font-bold text-gray-800 shadow">
+              NUGEP MAPS • REGISTRO HOMOLOGADO
+            </div>
           </div>
         )}
 
         {/* IMPRESSÃO DE PONTO */}
         {exportTarget === 'point' && selectedPoint && (
-          <div className="mb-6 p-5 border border-gray-300 rounded-2xl bg-gray-50 relative z-10 print-page-break space-y-4">
-            <div className="flex justify-between items-center border-b pb-3">
+          <div className="mb-3 p-3.5 border border-gray-300 rounded-xl bg-gray-50/80 relative z-10 print-page-break space-y-2.5">
+            <div className="flex justify-between items-center border-b border-gray-200 pb-1.5">
               <div>
-                <span className="text-[10px] font-bold uppercase text-[#A67C52]">Ponto Cartográfico Registrado</span>
-                <h3 className="text-xl font-black text-black">{selectedPoint.titulo}</h3>
+                <span className="text-[9px] font-bold uppercase tracking-wider text-[#A67C52]">Ponto Cartográfico Registrado</span>
+                <h3 className="text-base font-black text-black">{selectedPoint.titulo}</h3>
               </div>
               <div className="text-right">
-                <span className="text-[10px] font-bold uppercase text-gray-500">Classificação / Tipo</span>
-                <p className="text-sm font-bold text-black">{selectedPoint.objeto || 'Registro Georreferenciado'}</p>
+                <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">Classificação / Tipo</span>
+                <p className="text-xs font-bold text-[#A67C52]">{selectedPoint.objeto || 'Registro Georreferenciado'}</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-xs">
-              <div>
-                <span className="font-bold text-gray-500 block">Autor / Localidade:</span>
-                <span className="text-black font-semibold">{selectedPoint.autor || 'Território NUGEP'}</span>
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="p-2 bg-white border border-gray-200 rounded-lg">
+                <span className="text-[8px] font-bold text-gray-500 uppercase block">Autor / Localidade:</span>
+                <span className="text-black font-semibold truncate block text-xs">{selectedPoint.autor || 'Território NUGEP'}</span>
               </div>
-              <div>
-                <span className="font-bold text-gray-500 block">Ano de Levantamento / Registro:</span>
-                <span className="font-semibold text-black">{selectedPoint.ano || new Date().getFullYear().toString()}</span>
+              <div className="p-2 bg-white border border-gray-200 rounded-lg">
+                <span className="text-[8px] font-bold text-gray-500 uppercase block">Ano de Levantamento:</span>
+                <span className="text-black font-semibold block text-xs">{selectedPoint.ano || new Date().getFullYear().toString()}</span>
+              </div>
+              <div className="p-2 bg-white border border-gray-200 rounded-lg">
+                <span className="text-[8px] font-bold text-gray-500 uppercase block">Sistema Geodésico:</span>
+                <span className="text-black font-semibold block text-xs">SIRGAS 2000 / WGS 84</span>
               </div>
             </div>
 
-            <div className="p-3 bg-white border border-gray-200 rounded-xl">
-              <span className="text-[10px] font-bold uppercase text-gray-500 block mb-1">
-                Coordenadas Geográficas Oficiais (Datum SIRGAS 2000 / WGS 84)
+            <div className="p-2.5 bg-white border border-gray-200 rounded-lg">
+              <span className="text-[8px] font-bold uppercase text-gray-500 block mb-0.5">
+                Coordenadas Geográficas Oficiais
               </span>
-              <div className="grid grid-cols-2 gap-4 font-mono text-sm">
+              <div className="grid grid-cols-2 gap-4 font-mono text-xs">
                 <div>
-                  <span className="text-gray-500 text-xs mr-2">LATITUDE:</span>
+                  <span className="text-gray-500 mr-2">LATITUDE:</span>
                   <span className="font-bold text-black">{selectedPoint.latitude.toFixed(6)}°</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 text-xs mr-2">LONGITUDE:</span>
+                  <span className="text-gray-500 mr-2">LONGITUDE:</span>
                   <span className="font-bold text-black">{selectedPoint.longitude.toFixed(6)}°</span>
                 </div>
               </div>
             </div>
 
             <div>
-              <span className="font-bold text-gray-700 text-xs block mb-1 uppercase tracking-wider">
+              <span className="font-bold text-gray-700 text-[9px] block mb-0.5 uppercase tracking-wider">
                 Anotações e Parecer Técnico de Campo:
               </span>
-              <div className="p-4 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 leading-relaxed min-h-[80px] whitespace-pre-wrap font-sans">
+              <div className="p-2.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-800 leading-relaxed whitespace-pre-wrap font-sans">
                 {selectedPoint.anotacoes || 'Ponto georreferenciado registrado no sistema NUGEP MAPS sem restrições ou observações adicionais.'}
               </div>
             </div>
@@ -2489,72 +2508,89 @@ export default function HoloMapPlatform() {
 
         {/* IMPRESSÃO DE TERRITÓRIO */}
         {exportTarget === 'territory' && activeTerritory && (
-          <div className="mb-6 p-4 border border-gray-300 rounded-2xl bg-gray-50 relative z-10 print-page-break">
-            <div className="flex justify-between items-center border-b pb-2 mb-3">
+          <div className="mb-3 p-3.5 border border-gray-300 rounded-xl bg-gray-50/80 relative z-10 print-page-break space-y-2.5">
+            <div className="flex justify-between items-center border-b border-gray-200 pb-1.5">
               <div>
-                <span className="text-[10px] font-bold uppercase text-[#A67C52]">Território Demarcado</span>
-                <h3 className="text-lg font-bold text-black">{activeTerritory.nome}</h3>
+                <span className="text-[9px] font-bold uppercase tracking-wider text-[#A67C52]">Território Demarcado</span>
+                <h3 className="text-base font-black text-black">{activeTerritory.nome}</h3>
               </div>
               <div className="text-right">
-                <span className="text-[10px] font-bold uppercase text-gray-500">Área Oficial</span>
-                <p className="text-lg font-black text-black">{activeTerritory.areaHectares} hectares ({activeTerritory.areaKm2} km²)</p>
+                <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">Área Homologada</span>
+                <p className="text-base font-black text-[#A67C52]">{activeTerritory.areaHectares} ha</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 text-xs mb-4">
-              <div>
-                <span className="font-bold text-gray-500 block">Área em Metros Quadrados:</span>
-                <span className="font-mono">{activeTerritory.areaM2.toLocaleString('pt-BR')} m²</span>
+            {/* Grid de 4 Métricas */}
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="p-1.5 bg-white border border-gray-200 rounded-lg">
+                <span className="text-[8px] uppercase font-bold text-gray-500 block">Área em km²</span>
+                <span className="text-xs font-mono font-bold text-gray-900">{activeTerritory.areaKm2} km²</span>
               </div>
-              <div>
-                <span className="font-bold text-gray-500 block">Perímetro Total:</span>
-                <span className="font-mono">{activeTerritory.perimetroKm} km</span>
+              <div className="p-1.5 bg-white border border-gray-200 rounded-lg">
+                <span className="text-[8px] uppercase font-bold text-gray-500 block">Área em m²</span>
+                <span className="text-xs font-mono font-bold text-gray-900">{activeTerritory.areaM2.toLocaleString('pt-BR')} m²</span>
               </div>
-              <div>
-                <span className="font-bold text-gray-500 block">Total de Vértices:</span>
-                <span className="font-mono">{activeTerritory.pontos.length} coordenadas</span>
+              <div className="p-1.5 bg-white border border-gray-200 rounded-lg">
+                <span className="text-[8px] uppercase font-bold text-gray-500 block">Perímetro</span>
+                <span className="text-xs font-mono font-bold text-gray-900">{activeTerritory.perimetroKm} km</span>
+              </div>
+              <div className="p-1.5 bg-white border border-gray-200 rounded-lg">
+                <span className="text-[8px] uppercase font-bold text-gray-500 block">Vértices</span>
+                <span className="text-xs font-mono font-bold text-gray-900">{activeTerritory.pontos.length} coord.</span>
               </div>
             </div>
 
+            {/* Parecer Técnico */}
             {activeTerritory.descricao && (
-              <div className="mb-4 text-xs">
-                <span className="font-bold text-gray-500 block">Parecer / Descrição Técnica:</span>
-                <p className="text-gray-800">{activeTerritory.descricao}</p>
+              <div className="p-2 bg-white border border-gray-200 rounded-lg text-xs">
+                <span className="text-[8px] font-bold uppercase text-gray-500 block mb-0.5">Parecer / Descrição Técnica:</span>
+                <p className="text-gray-800 leading-snug">{activeTerritory.descricao}</p>
               </div>
             )}
 
-            <h4 className="text-xs font-bold uppercase border-b pb-1 mb-2 text-gray-700">Tabela de Coordenadas dos Vértices (SIRGAS 2000 / WGS 84)</h4>
-            <table className="w-full text-xs text-left border-collapse font-mono">
-              <thead>
-                <tr className="border-b text-gray-500">
-                  <th className="py-1">Vértice</th>
-                  <th className="py-1">Latitude</th>
-                  <th className="py-1">Longitude</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeTerritory.pontos.map((p, idx) => (
-                  <tr key={idx} className="border-b border-gray-100">
-                    <td className="py-1 font-bold">V{idx + 1}</td>
-                    <td className="py-1">{p[1].toFixed(6)}°</td>
-                    <td className="py-1">{p[0].toFixed(6)}°</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {/* Tabela de Coordenadas dos Vértices */}
+            <div>
+              <span className="text-[8px] font-bold uppercase tracking-wider text-gray-600 block mb-1">
+                Tabela de Coordenadas dos Vértices Perimetrais (Datum SIRGAS 2000 / WGS 84)
+              </span>
+              <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                <table className="w-full text-[10px] text-left border-collapse font-mono">
+                  <thead>
+                    <tr className="bg-gray-100 border-b border-gray-200 text-gray-600 font-bold">
+                      <th className="py-1 px-3">Vértice</th>
+                      <th className="py-1 px-3">Latitude Oficial</th>
+                      <th className="py-1 px-3">Longitude Oficial</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeTerritory.pontos.map((p, idx) => (
+                      <tr key={idx} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                        <td className="py-1 px-3 font-bold text-gray-800">V{idx + 1}</td>
+                        <td className="py-1 px-3 text-gray-700">{p[1].toFixed(6)}°</td>
+                        <td className="py-1 px-3 text-gray-700">{p[0].toFixed(6)}°</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
-        <div className="mt-12 pt-6 border-t-2 border-gray-300 flex justify-between items-end relative z-10 print-page-break">
+        {/* RODAPÉ DE HOMOLOGAÇÃO E ASSINATURA */}
+        <div className="mt-4 pt-3 border-t border-gray-300 flex justify-between items-end relative z-10 print-page-break">
           <div>
-            <p className="text-[10px] uppercase font-bold text-gray-500">Sistema</p>
-            <p className="text-xs font-bold">NUGEP MAPS</p>
-            <p className="text-[10px] text-gray-500">Documento Oficial para Fins Técnicos e Museológicos</p>
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <span className="font-black text-xs text-black">NUGEP</span>
+              <span className="font-black text-xs text-[#A67C52]">MAPS</span>
+            </div>
+            <p className="text-[9px] text-gray-500">Documento Oficial emitido pelo Núcleo de Gestão e Pesquisa</p>
+            <p className="text-[8px] text-gray-400 font-mono">Autenticidade verificável via georreferenciamento SIRGAS 2000</p>
           </div>
           <div className="text-center">
-            <div className="w-56 border-b border-black mb-1" />
-            <p className="text-xs font-bold">Responsável Técnico</p>
-            <p className="text-[10px] text-gray-500">Núcleo de Gestão e Pesquisa (NUGEP)</p>
+            <div className="w-48 border-b border-black mb-1" />
+            <p className="text-xs font-bold text-black">Responsável Técnico</p>
+            <p className="text-[9px] text-gray-600">Núcleo de Gestão e Pesquisa (NUGEP)</p>
           </div>
         </div>
       </div>
