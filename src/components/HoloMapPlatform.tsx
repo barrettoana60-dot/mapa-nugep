@@ -10,7 +10,7 @@ import {
   FileSpreadsheet, Edit3, Save, Sun, Moon, 
   RotateCcw, Hexagon, Globe, Building2, CloudSun,
   CheckCircle2, AlertCircle, FileText, MousePointer, Landmark,
-  Printer, ShieldCheck, Undo2, ChevronRight, Cloud, Sparkles
+  Printer, ShieldCheck, Undo2, ChevronRight, Cloud
 } from 'lucide-react';
 
 // Tipagem dos Pontos Georreferenciados
@@ -24,6 +24,7 @@ export type ObjetoCultural = {
   longitude: number;
   altura: number;
   datasetName?: string;
+  anotacoes?: string;
   extraProps?: Record<string, any>;
 };
 
@@ -118,6 +119,8 @@ export default function HoloMapPlatform() {
   const [demarcatedTerritories, setDemarcatedTerritories] = useState<DemarcatedTerritory[]>([]);
   const [selectedPoint, setSelectedPoint] = useState<ObjetoCultural | null>(null);
   const [activeTerritory, setActiveTerritory] = useState<DemarcatedTerritory | null>(null);
+  const [exportTarget, setExportTarget] = useState<'territory' | 'point'>('territory');
+  const [territoriesListTab, setTerritoriesListTab] = useState<'territories' | 'points'>('territories');
 
   // URL para camada de nuvens de satélite em tempo real (RainViewer / Fallback)
   const [cloudTileUrl, setCloudTileUrl] = useState<string>(
@@ -422,10 +425,58 @@ export default function HoloMapPlatform() {
     showToast('Território excluído.');
   };
 
+  // Salvar alterações no Ponto Selecionado
+  const handleSaveActivePoint = () => {
+    if (!selectedPoint) return;
+    setObjetos(prev => {
+      const updatedList = prev.some(o => o.id === selectedPoint.id)
+        ? prev.map(o => o.id === selectedPoint.id ? selectedPoint : o)
+        : [selectedPoint, ...prev];
+      try {
+        localStorage.setItem('nugep_points_v4', JSON.stringify(updatedList));
+      } catch (e) {}
+      return updatedList;
+    });
+    showToast('Ponto e anotações salvos com sucesso!');
+  };
+
+  // Excluir Ponto
+  const handleDeleteActivePoint = (idToDelete?: string) => {
+    const id = idToDelete || selectedPoint?.id;
+    if (!id) return;
+    setObjetos(prev => {
+      const updatedList = prev.filter(o => o.id !== id);
+      try {
+        localStorage.setItem('nugep_points_v4', JSON.stringify(updatedList));
+      } catch (e) {}
+      return updatedList;
+    });
+    if (selectedPoint?.id === id) setSelectedPoint(null);
+    showToast('Ponto removido.');
+  };
+
+  // Exportar Dossiê do Ponto em PDF com Marca d'Água do NUGEP
+  const handleExportPointPDF = (pointToExport?: ObjetoCultural) => {
+    const target = pointToExport || selectedPoint;
+    if (!target) return;
+    setSelectedPoint(target);
+    setExportTarget('point');
+
+    if (mapRef.current) {
+      try {
+        const canvas = mapRef.current.getMap().getCanvas();
+        setPrintImage(canvas.toDataURL('image/png'));
+      } catch (err) {}
+    }
+
+    setActiveModal('export_dossier');
+  };
+
   // Exportar Dossiê do Território em PDF com Marca d'Água do NUGEP
   const handleExportTerritoryPDF = (territoryToExport?: DemarcatedTerritory) => {
     const target = territoryToExport || activeTerritory;
     if (target) setActiveTerritory(target);
+    setExportTarget('territory');
 
     // Capturar snapshot do mapa
     if (mapRef.current) {
@@ -705,89 +756,88 @@ export default function HoloMapPlatform() {
       )}
 
       {/* =========================================================================
-          CONTROLES SUPERIORES FLUTUANTES (SEM BARRA HORIZONTAL FIXA!)
+          BARRA SUPERIOR RESPONSIVA: BRANDING + BUSCA
           ========================================================================= */}
-
-      {/* BRANDING: NUGEP MAPS + LOGO DO MUSEU */}
-      <div className="absolute top-4 left-4 z-30 pointer-events-auto">
+      <div className="absolute top-2 sm:top-4 inset-x-2 sm:inset-x-4 z-30 flex items-center justify-between gap-2 sm:gap-4 pointer-events-none">
+        {/* BRANDING: NUGEP MAPS + LOGO DO MUSEU */}
         <div 
           onClick={() => flyToPreset('nugep')}
-          className="liquid-glass rounded-2xl px-4 py-2.5 flex items-center gap-3 border border-white/15 shadow-2xl cursor-pointer hover:bg-white/10 active:scale-95 transition-all"
-          title="Centralizar Território"
+          className="liquid-glass rounded-2xl px-3 sm:px-4 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3 border border-white/15 shadow-2xl cursor-pointer hover:bg-white/10 active:scale-95 transition-all pointer-events-auto shrink-0"
+          title="Centralizar Território NUGEP"
         >
-          <div className="w-8 h-8 rounded-xl bg-black/40 border border-[#A67C52]/50 flex items-center justify-center shadow-inner">
-            <Landmark size={18} color="#A67C52" strokeWidth={2} />
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-black/40 border border-[#A67C52]/50 flex items-center justify-center shadow-inner">
+            <Landmark size={16} color="#A67C52" strokeWidth={2} />
           </div>
-          <div className="flex items-center gap-1.5 font-bold tracking-widest text-sm text-white">
+          <div className="flex items-center gap-1 font-bold tracking-widest text-xs sm:text-sm text-white">
             <span>NUGEP</span>
             <span className="text-[#A67C52]">MAPS</span>
           </div>
         </div>
-      </div>
 
-      {/* BARRA DE BUSCA CENTRAL SUSPENSA NO MAPA */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-260px)] max-w-[460px] pointer-events-auto">
-        <form 
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (searchSuggestions.length > 0) handleSelectSuggestion(searchSuggestions[0]);
-          }}
-          className="liquid-glass rounded-2xl p-1.5 flex items-center gap-2 border border-white/20 shadow-2xl transition-all focus-within:border-[#A67C52]"
-        >
-          <div className="pl-3 text-[#A67C52]">
-            <Search size={16} />
-          </div>
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={searchQuery}
-            onChange={e => handleSearchInput(e.target.value)}
-            onFocus={() => {
-              if (searchSuggestions.length > 0) setShowSearchDropdown(true);
+        {/* BARRA DE BUSCA CENTRAL SUSPENSA NO MAPA */}
+        <div className="flex-1 max-w-[460px] pointer-events-auto relative">
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (searchSuggestions.length > 0) handleSelectSuggestion(searchSuggestions[0]);
             }}
-            placeholder="Buscar endereço, cidade ou coordenadas (-9.17, -36.06)..."
-            className="w-full bg-transparent text-xs sm:text-sm outline-none placeholder:text-gray-400/60 font-medium"
-          />
-          {isSearching && (
-            <div className="w-4 h-4 border-2 border-[#A67C52] border-t-transparent rounded-full animate-spin shrink-0 mr-2" />
-          )}
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery('');
-                setSearchSuggestions([]);
-                setShowSearchDropdown(false);
+            className="liquid-glass rounded-2xl p-1 sm:p-1.5 flex items-center gap-1.5 sm:gap-2 border border-white/20 shadow-2xl transition-all focus-within:border-[#A67C52]"
+          >
+            <div className="pl-2 sm:pl-3 text-[#A67C52]">
+              <Search size={15} />
+            </div>
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={e => handleSearchInput(e.target.value)}
+              onFocus={() => {
+                if (searchSuggestions.length > 0) setShowSearchDropdown(true);
               }}
-              className="p-1 hover:bg-white/10 rounded-full opacity-60 hover:opacity-100 mr-1"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </form>
-
-        {showSearchDropdown && searchSuggestions.length > 0 && (
-          <div className="mt-2 w-full liquid-glass rounded-2xl border border-white/20 overflow-hidden shadow-2xl z-50 flex flex-col max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in duration-200">
-            {searchSuggestions.map(item => (
-              <div
-                key={item.id}
-                onClick={() => handleSelectSuggestion(item)}
-                className="px-4 py-2.5 hover:bg-[#A67C52]/20 cursor-pointer border-b border-white/5 last:border-0 flex flex-col gap-0.5 transition-colors"
+              placeholder="Buscar endereço ou coordenadas (-9.17, -36.06)..."
+              className="w-full bg-transparent text-xs sm:text-sm outline-none placeholder:text-gray-400/60 font-medium"
+            />
+            {isSearching && (
+              <div className="w-3.5 h-3.5 border-2 border-[#A67C52] border-t-transparent rounded-full animate-spin shrink-0 mr-1" />
+            )}
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSearchSuggestions([]);
+                  setShowSearchDropdown(false);
+                }}
+                className="p-1 hover:bg-white/10 rounded-full opacity-60 hover:opacity-100 mr-1"
               >
-                <span className="text-xs sm:text-sm font-semibold">{item.text}</span>
-                <span className="text-[11px] opacity-60 truncate">{item.place_name}</span>
-              </div>
-            ))}
-          </div>
-        )}
+                <X size={13} />
+              </button>
+            )}
+          </form>
+
+          {showSearchDropdown && searchSuggestions.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-2 w-full liquid-glass rounded-2xl border border-white/20 overflow-hidden shadow-2xl z-50 flex flex-col max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in duration-200">
+              {searchSuggestions.map(item => (
+                <div
+                  key={item.id}
+                  onClick={() => handleSelectSuggestion(item)}
+                  className="px-4 py-2.5 hover:bg-[#A67C52]/20 cursor-pointer border-b border-white/5 last:border-0 flex flex-col gap-0.5 transition-colors"
+                >
+                  <span className="text-xs sm:text-sm font-semibold">{item.text}</span>
+                  <span className="text-[11px] opacity-60 truncate">{item.place_name}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* =========================================================================
-          TRILHO LATERAL ESQUERDO (ACESSOS OPERACIONAIS NÃO DUPLICADOS)
+          TRILHO LATERAL ESQUERDO (DESKTOP) & BARRA INFERIOR DOCK (MOBILE)
           ========================================================================= */}
-      <nav className="absolute left-4 top-20 bottom-4 w-12 z-20 liquid-glass rounded-2xl border border-white/15 shadow-2xl flex flex-col items-center justify-between py-3 pointer-events-auto">
-        <div className="flex flex-col items-center gap-3">
-          {/* Territórios Demarcados (Lista) */}
+      <nav className="fixed md:absolute bottom-2 md:bottom-4 inset-x-2 md:inset-x-auto md:left-4 md:top-20 md:w-12 h-13 md:h-auto z-40 liquid-glass rounded-2xl border border-white/15 shadow-2xl flex flex-row md:flex-col items-center justify-around md:justify-between px-2 py-1 md:px-0 md:py-3 pointer-events-auto">
+        <div className="flex flex-row md:flex-col items-center gap-2 md:gap-3">
+          {/* Territórios e Pontos Demarcados (Lista) */}
           <button
             onClick={() => setActiveModal(prev => prev === 'territories_list' ? null : 'territories_list')}
             className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-95 transition-all relative ${
@@ -795,12 +845,12 @@ export default function HoloMapPlatform() {
                 ? 'bg-[#A67C52] text-white shadow-lg' 
                 : 'hover:bg-white/10 opacity-70 hover:opacity-100'
             }`}
-            title="Territórios Demarcados"
+            title="Territórios e Pontos Demarcados"
           >
             <Hexagon size={18} />
-            {demarcatedTerritories.length > 0 && (
+            {(demarcatedTerritories.length > 0 || objetos.length > 0) && (
               <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 text-black text-[9px] font-black rounded-full flex items-center justify-center shadow">
-                {demarcatedTerritories.length}
+                {demarcatedTerritories.length + objetos.length}
               </span>
             )}
           </button>
@@ -839,9 +889,9 @@ export default function HoloMapPlatform() {
           </button>
         </div>
 
-        <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-row md:flex-col items-center gap-2 md:gap-3">
           <button
-            onClick={() => setActiveModal('settings')}
+            onClick={() => setActiveModal(prev => prev === 'settings' ? null : 'settings')}
             className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-95 transition-all ${
               activeModal === 'settings' 
                 ? 'bg-[#A67C52] text-white shadow-lg' 
@@ -853,8 +903,12 @@ export default function HoloMapPlatform() {
           </button>
 
           <button
-            onClick={() => setActiveModal('info')}
-            className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 active:scale-95 transition-all opacity-70 hover:opacity-100"
+            onClick={() => setActiveModal(prev => prev === 'info' ? null : 'info')}
+            className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-95 transition-all ${
+              activeModal === 'info' 
+                ? 'bg-[#A67C52] text-white shadow-lg' 
+                : 'hover:bg-white/10 opacity-70 hover:opacity-100'
+            }`}
             title="Sobre o NUGEP MAPS"
           >
             <Info size={18} />
@@ -865,7 +919,7 @@ export default function HoloMapPlatform() {
       {/* =========================================================================
           PALETA FLUTUANTE DE DESENHO / CARTOGRAFIA (DIREITA)
           ========================================================================= */}
-      <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 pointer-events-auto">
+      <div className="absolute top-16 md:top-20 right-2 md:right-4 z-20 flex flex-col gap-2 pointer-events-auto">
         <div className="liquid-glass rounded-2xl p-1.5 flex flex-col gap-1.5 border border-white/20 shadow-2xl">
           {/* Navegação Padrão */}
           <button
@@ -971,7 +1025,7 @@ export default function HoloMapPlatform() {
           BARRA DE AÇÃO DA DEMARCAÇÃO EM ANDAMENTO (QUANDO ATIVA)
           ========================================================================= */}
       {activeTool === 'polygon' && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-3xl p-4 border border-[#A67C52]/60 shadow-2xl flex flex-col md:flex-row items-center gap-4 animate-in slide-in-from-bottom-4 duration-300 pointer-events-auto max-w-[92vw]">
+        <div className="fixed md:absolute bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-3xl p-3 sm:p-4 border border-[#A67C52]/60 shadow-2xl flex flex-col md:flex-row items-center gap-3 sm:gap-4 animate-in slide-in-from-bottom-4 duration-300 pointer-events-auto max-w-[95vw] md:max-w-[92vw]">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-[#A67C52]/30 border border-[#A67C52] flex items-center justify-center text-[#A67C52]">
               <Hexagon size={20} strokeWidth={2.5} />
@@ -1033,7 +1087,7 @@ export default function HoloMapPlatform() {
 
       {/* Régua de Medição */}
       {activeTool === 'measure' && measurementPoints.length > 0 && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-2xl px-5 py-3 border border-white/20 shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4 pointer-events-auto">
+        <div className="fixed md:absolute bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-2xl px-4 sm:px-5 py-2.5 sm:py-3 border border-white/20 shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4 pointer-events-auto">
           <div>
             <p className="text-[10px] uppercase tracking-widest opacity-60 font-bold">Distância Linear</p>
             <p className="text-xl font-light text-amber-400">
@@ -1297,7 +1351,7 @@ export default function HoloMapPlatform() {
           PAINEL DO TERRITÓRIO DEMARCADO (COM SALVAR E EXPORTAR PDF DIRETO NELE!)
           ========================================================================= */}
       {activeTerritory && (
-        <aside className="absolute top-20 left-18 bottom-4 w-96 liquid-glass rounded-3xl p-6 border border-[#A67C52]/50 shadow-2xl z-30 flex flex-col overflow-hidden animate-in slide-in-from-left-4 duration-300 pointer-events-auto">
+        <aside className="fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-18 md:top-20 md:w-96 max-h-[75vh] md:max-h-none liquid-glass rounded-3xl p-5 sm:p-6 border border-[#A67C52]/50 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto">
           <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
             <div className="flex items-center gap-2">
               <div className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: activeTerritory.cor }} />
@@ -1418,20 +1472,20 @@ export default function HoloMapPlatform() {
 
       {/* PAINEL DE PROPRIEDADES DO PONTO */}
       {selectedPoint && (
-        <aside className="absolute top-20 left-18 bottom-4 w-80 liquid-glass rounded-3xl p-5 border border-white/20 shadow-2xl z-30 flex flex-col overflow-hidden animate-in slide-in-from-left-4 duration-300 pointer-events-auto">
+        <aside className="fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-18 md:top-20 md:w-96 max-h-[75vh] md:max-h-none liquid-glass rounded-3xl p-5 sm:p-6 border border-[#A67C52]/50 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto">
           <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
             <div className="flex items-center gap-2">
               <MapPin size={16} className="text-[#A67C52]" />
-              <span className="text-xs font-bold uppercase tracking-wider">Ponto Marcado</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Ponto Marcado</span>
             </div>
             <button onClick={() => setSelectedPoint(null)} className="p-1 hover:bg-white/10 rounded-lg">
               <X size={16} />
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto custom-scrollbar py-4 space-y-4">
+          <div className="flex-1 overflow-y-auto custom-scrollbar py-4 space-y-3.5">
             <div>
-              <label className="text-[10px] uppercase font-bold tracking-wider opacity-50 block mb-1">Título</label>
+              <label className="text-[10px] uppercase font-bold tracking-wider opacity-50 block mb-1">Título do Ponto</label>
               <input
                 type="text"
                 value={selectedPoint.titulo}
@@ -1440,41 +1494,103 @@ export default function HoloMapPlatform() {
                   setSelectedPoint(updated);
                   setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
                 }}
-                className="w-full bg-white/10 rounded-xl px-3 py-2 text-sm font-semibold border border-white/10 outline-none"
+                className="w-full bg-white/10 rounded-xl px-3 py-2 text-sm font-bold border border-white/15 outline-none focus:border-[#A67C52]"
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] uppercase font-bold tracking-wider opacity-50 block mb-1">Classificação / Tipo</label>
+                <input
+                  type="text"
+                  value={selectedPoint.objeto || ''}
+                  placeholder="Ex: Patrimônio Histórico"
+                  onChange={e => {
+                    const updated = { ...selectedPoint, objeto: e.target.value };
+                    setSelectedPoint(updated);
+                    setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
+                  }}
+                  className="w-full bg-white/10 rounded-xl px-3 py-2 text-xs border border-white/10 outline-none focus:border-[#A67C52]"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold tracking-wider opacity-50 block mb-1">Autor / Localidade</label>
+                <input
+                  type="text"
+                  value={selectedPoint.autor || ''}
+                  placeholder="Ex: Santana do Ipanema"
+                  onChange={e => {
+                    const updated = { ...selectedPoint, autor: e.target.value };
+                    setSelectedPoint(updated);
+                    setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
+                  }}
+                  className="w-full bg-white/10 rounded-xl px-3 py-2 text-xs border border-white/10 outline-none focus:border-[#A67C52]"
+                />
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-black/20 border border-white/10 text-xs">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] uppercase font-bold tracking-wider opacity-50">Coordenadas Oficiais</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${selectedPoint.latitude.toFixed(6)}, ${selectedPoint.longitude.toFixed(6)}`);
+                    showToast('Coordenadas copiadas!', 'info');
+                  }}
+                  className="text-[10px] text-[#A67C52] hover:underline"
+                >
+                  Copiar
+                </button>
+              </div>
+              <p className="font-mono text-amber-300 font-semibold">{selectedPoint.latitude.toFixed(6)}°, {selectedPoint.longitude.toFixed(6)}°</p>
+              <p className="text-[10px] opacity-40 mt-0.5">Datum SIRGAS 2000 / WGS 84</p>
             </div>
 
             <div>
-              <label className="text-[10px] uppercase font-bold tracking-wider opacity-50 block mb-1">Autor / Região</label>
-              <input
-                type="text"
-                value={selectedPoint.autor}
+              <label className="text-[10px] uppercase font-bold tracking-wider text-amber-400 block mb-1">
+                Anotações e Parecer Técnico de Campo
+              </label>
+              <textarea
+                value={selectedPoint.anotacoes || ''}
                 onChange={e => {
-                  const updated = { ...selectedPoint, autor: e.target.value };
+                  const updated = { ...selectedPoint, anotacoes: e.target.value };
                   setSelectedPoint(updated);
                   setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
                 }}
-                className="w-full bg-white/10 rounded-xl px-3 py-2 text-xs border border-white/10 outline-none"
+                rows={4}
+                placeholder="Insira anotações de campo, observações históricas, referências de tombamento ou parecer técnico..."
+                className="w-full bg-white/10 rounded-xl p-3 text-xs border border-white/10 outline-none focus:border-[#A67C52] resize-none custom-scrollbar"
               />
-            </div>
-
-            <div className="pt-2 border-t border-white/10 text-xs">
-              <span className="text-[10px] uppercase font-bold tracking-wider opacity-50 block mb-1">Coordenadas</span>
-              <p className="font-mono text-amber-300">{selectedPoint.latitude.toFixed(6)}, {selectedPoint.longitude.toFixed(6)}</p>
             </div>
           </div>
 
-          <div className="pt-3 border-t border-white/10 shrink-0">
+          <div className="pt-3 border-t border-white/10 shrink-0 space-y-2">
+            <div className="flex gap-2">
+              <button
+                onClick={handleSaveActivePoint}
+                className="flex-1 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#A67C52] hover:bg-[#8F653E] text-white transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
+              >
+                <Save size={15} />
+                <span>Salvar Ponto</span>
+              </button>
+
+              <button
+                onClick={() => handleDeleteActivePoint()}
+                className="p-2.5 rounded-xl text-xs bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all"
+                title="Excluir Ponto"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+
             <button
-              onClick={() => {
-                setObjetos(prev => prev.filter(o => o.id !== selectedPoint.id));
-                setSelectedPoint(null);
-                showToast('Ponto removido.');
-              }}
-              className="w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all flex items-center justify-center gap-1.5"
+              onClick={() => handleExportPointPDF(selectedPoint)}
+              className="w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wider liquid-glass border border-white/20 hover:bg-white/10 text-white transition-all flex items-center justify-center gap-2 active:scale-95"
             >
-              <Trash2 size={14} />
-              <span>Excluir Ponto</span>
+              <Download size={14} className="text-[#A67C52]" />
+              <span>Exportar PDF deste Ponto (Marca d'Água)</span>
             </button>
           </div>
         </aside>
@@ -1484,75 +1600,158 @@ export default function HoloMapPlatform() {
           MODAIS E DRAWERS
           ========================================================================= */}
 
-      {/* 1. LISTA DE TERRITÓRIOS DEMARCADOS */}
+      {/* 1. LISTA DE TERRITÓRIOS E PONTOS DEMARCADOS */}
       {activeModal === 'territories_list' && (
-        <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-lg border border-white/20 shadow-2xl relative max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between pb-4 border-b border-white/10 shrink-0 mb-4">
+        <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+          <div className="liquid-glass rounded-3xl p-5 sm:p-7 w-full max-w-lg border border-white/20 shadow-2xl relative max-h-[88vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0 mb-3">
               <div className="flex items-center gap-2.5">
                 <Hexagon size={20} className="text-[#A67C52]" />
-                <h3 className="font-bold text-base sm:text-lg">Territórios Demarcados ({demarcatedTerritories.length})</h3>
+                <h3 className="font-bold text-base sm:text-lg">Demarcações do Sistema</h3>
               </div>
               <button onClick={() => setActiveModal(null)} className="p-1.5 hover:bg-white/10 rounded-xl">
                 <X size={18} />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
-              {demarcatedTerritories.length === 0 ? (
-                <div className="py-12 text-center opacity-60">
-                  <Hexagon size={36} className="mx-auto mb-2 opacity-40" />
-                  <p className="text-xs">Nenhum território demarcado ainda.</p>
-                  <p className="text-[11px] opacity-75 mt-1">Use a ferramenta de polígono no canto direito para traçar um perímetro ou importe uma planilha.</p>
-                </div>
-              ) : (
-                demarcatedTerritories.map(terr => (
-                  <div 
-                    key={terr.id} 
-                    onClick={() => {
-                      setActiveTerritory(terr);
-                      const lats = terr.pontos.map(p => p[1]);
-                      const lngs = terr.pontos.map(p => p[0]);
-                      const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
-                      const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
-                      setViewState(prev => ({ ...prev, latitude: centerLat, longitude: centerLng, zoom: 15 }));
-                      setActiveModal(null);
-                    }}
-                    className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between gap-3 hover:bg-white/10 cursor-pointer transition-all group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-4 h-4 rounded-full" style={{ backgroundColor: terr.cor }} />
-                      <div>
-                        <h4 className="font-semibold text-sm group-hover:text-amber-300 transition-colors">{terr.nome}</h4>
-                        <p className="text-[11px] opacity-60">
-                          {terr.areaHectares} hectares | {terr.areaKm2} km² | {terr.pontos.length} vértices
-                        </p>
+            {/* ABAS DE NAVEGAÇÃO */}
+            <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-3 shrink-0">
+              <button
+                onClick={() => setTerritoriesListTab('territories')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  territoriesListTab === 'territories'
+                    ? 'bg-[#A67C52] text-white shadow-md'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <Hexagon size={14} />
+                <span>Territórios ({demarcatedTerritories.length})</span>
+              </button>
+              <button
+                onClick={() => setTerritoriesListTab('points')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  territoriesListTab === 'points'
+                    ? 'bg-[#A67C52] text-white shadow-md'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <MapPin size={14} />
+                <span>Pontos ({objetos.length})</span>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2.5">
+              {territoriesListTab === 'territories' ? (
+                demarcatedTerritories.length === 0 ? (
+                  <div className="py-12 text-center opacity-60">
+                    <Hexagon size={36} className="mx-auto mb-2 opacity-40 text-[#A67C52]" />
+                    <p className="text-xs">Nenhum território demarcado ainda.</p>
+                    <p className="text-[11px] opacity-75 mt-1">Use a ferramenta de polígono no canto direito para traçar um perímetro ou importe uma planilha.</p>
+                  </div>
+                ) : (
+                  demarcatedTerritories.map(terr => (
+                    <div 
+                      key={terr.id} 
+                      onClick={() => {
+                        setActiveTerritory(terr);
+                        const lats = terr.pontos.map(p => p[1]);
+                        const lngs = terr.pontos.map(p => p[0]);
+                        const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+                        const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+                        setViewState(prev => ({ ...prev, latitude: centerLat, longitude: centerLng, zoom: 15 }));
+                        setActiveModal(null);
+                      }}
+                      className="p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between gap-3 hover:bg-white/10 cursor-pointer transition-all group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: terr.cor }} />
+                        <div>
+                          <h4 className="font-semibold text-sm group-hover:text-amber-300 transition-colors">{terr.nome}</h4>
+                          <p className="text-[11px] opacity-60">
+                            {terr.areaHectares} hectares | {terr.areaKm2} km² | {terr.pontos.length} vértices
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => handleExportTerritoryPDF(terr)}
+                          className="p-2 rounded-xl bg-[#A67C52]/20 hover:bg-[#A67C52]/30 text-[#A67C52] text-xs flex items-center gap-1 font-bold"
+                          title="Exportar Dossiê em PDF"
+                        >
+                          <Download size={14} />
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setDemarcatedTerritories(prev => prev.filter(t => t.id !== terr.id));
+                            if (activeTerritory?.id === terr.id) setActiveTerritory(null);
+                            showToast('Território removido.');
+                          }}
+                          className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs"
+                          title="Excluir"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={() => handleExportTerritoryPDF(terr)}
-                        className="p-2 rounded-xl bg-[#A67C52]/20 hover:bg-[#A67C52]/30 text-[#A67C52] text-xs flex items-center gap-1 font-bold"
-                        title="Exportar Dossiê em PDF"
-                      >
-                        <Download size={14} />
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setDemarcatedTerritories(prev => prev.filter(t => t.id !== terr.id));
-                          if (activeTerritory?.id === terr.id) setActiveTerritory(null);
-                          showToast('Território removido.');
-                        }}
-                        className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs"
-                        title="Excluir"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
+                  ))
+                )
+              ) : (
+                objetos.length === 0 ? (
+                  <div className="py-12 text-center opacity-60">
+                    <MapPin size={36} className="mx-auto mb-2 opacity-40 text-[#A67C52]" />
+                    <p className="text-xs">Nenhum ponto registrado ainda.</p>
+                    <p className="text-[11px] opacity-75 mt-1">Use a ferramenta de marcador no canto direito ou importe uma planilha para registrar pontos.</p>
                   </div>
-                ))
+                ) : (
+                  objetos.map(obj => (
+                    <div 
+                      key={obj.id} 
+                      onClick={() => {
+                        setSelectedPoint(obj);
+                        setViewState(prev => ({ ...prev, latitude: obj.latitude, longitude: obj.longitude, zoom: 16 }));
+                        setActiveModal(null);
+                      }}
+                      className="p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between gap-3 hover:bg-white/10 cursor-pointer transition-all group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-[#A67C52]/20 border border-[#A67C52]/50 flex items-center justify-center text-[#A67C52] shrink-0">
+                          <MapPin size={15} />
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="font-semibold text-sm group-hover:text-amber-300 transition-colors truncate">{obj.titulo}</h4>
+                          <p className="text-[11px] opacity-60 truncate">
+                            {obj.objeto || 'Ponto'} • {obj.autor || 'Território'} ({obj.latitude.toFixed(4)}, {obj.longitude.toFixed(4)})
+                          </p>
+                          {obj.anotacoes && (
+                            <p className="text-[10px] text-amber-300/80 line-clamp-1 italic mt-0.5">
+                              "{obj.anotacoes}"
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => handleExportPointPDF(obj)}
+                          className="p-2 rounded-xl bg-[#A67C52]/20 hover:bg-[#A67C52]/30 text-[#A67C52] text-xs flex items-center gap-1 font-bold"
+                          title="Exportar PDF deste Ponto"
+                        >
+                          <Download size={14} />
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteActivePoint(obj.id)}
+                          className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs"
+                          title="Excluir"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )
               )}
             </div>
           </div>
@@ -1561,45 +1760,103 @@ export default function HoloMapPlatform() {
 
       {/* 2. MODAL DE EXPORTAÇÃO DO DOSSIÊ COM MARCA D'ÁGUA DO NUGEP */}
       {activeModal === 'export_dossier' && (
-        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
-          <div className="liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-3xl max-h-[92vh] border border-[#A67C52]/50 shadow-2xl flex flex-col overflow-hidden relative watermark-nugep">
+        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
+          <div className="liquid-glass rounded-3xl p-5 sm:p-8 w-full max-w-3xl max-h-[92vh] border border-[#A67C52]/50 shadow-2xl flex flex-col overflow-hidden relative watermark-nugep">
             
-            <div className="flex items-center justify-between pb-4 border-b border-white/10 shrink-0">
+            <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-white/10 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-black/40 border border-[#A67C52] flex items-center justify-center shadow-lg">
+                <div className="w-10 h-10 rounded-2xl bg-black/40 border border-[#A67C52] flex items-center justify-center shadow-lg shrink-0">
                   <Landmark size={20} color="#A67C52" strokeWidth={2} />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-base sm:text-lg tracking-wide">Dossiê Cartográfico • NUGEP MAPS</h3>
-                  <p className="text-xs opacity-60">
-                    Documento Oficial de Demarcação Territorial com Marca d'Água do Núcleo
+                  <h3 className="font-extrabold text-sm sm:text-lg tracking-wide">
+                    {exportTarget === 'point' ? 'Dossiê do Ponto Georreferenciado • NUGEP MAPS' : 'Dossiê Cartográfico • NUGEP MAPS'}
+                  </h3>
+                  <p className="text-[11px] sm:text-xs opacity-60">
+                    {exportTarget === 'point'
+                      ? 'Registro Oficial de Ponto Georreferenciado com Marca d\'Água do Núcleo'
+                      : 'Documento Oficial de Demarcação Territorial com Marca d\'Água do Núcleo'}
                   </p>
                 </div>
               </div>
               <button onClick={() => setActiveModal(null)} className="p-2 hover:bg-white/10 rounded-xl">
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar my-4 space-y-4 pr-1">
+            <div className="flex-1 overflow-y-auto custom-scrollbar my-3 sm:my-4 space-y-3.5 pr-1">
               {/* Snapshot do Mapa */}
-              <div className="w-full h-56 rounded-2xl overflow-hidden border border-white/15 bg-black/40 relative flex items-center justify-center">
+              <div className="w-full h-44 sm:h-56 rounded-2xl overflow-hidden border border-white/15 bg-black/40 relative flex items-center justify-center">
                 {printImage ? (
-                  <img src={printImage} alt="Snapshot do Território" className="w-full h-full object-cover" />
+                  <img src={printImage} alt="Snapshot Cartográfico" className="w-full h-full object-cover" />
                 ) : (
                   <div className="flex flex-col items-center gap-2 opacity-50">
                     <Globe size={32} />
                     <p className="text-xs">Gerando visualização cartográfica...</p>
                   </div>
                 )}
-                <div className="absolute bottom-3 right-3 px-3 py-1 rounded-lg liquid-glass border border-white/20 text-[10px] font-mono flex items-center gap-1.5 shadow-xl">
+                <div className="absolute bottom-2.5 right-2.5 px-3 py-1 rounded-lg liquid-glass border border-white/20 text-[10px] font-mono flex items-center gap-1.5 shadow-xl">
                   <ShieldCheck size={12} className="text-emerald-400" />
                   <span>NUGEP MAPS • HOMOLOGADO</span>
                 </div>
               </div>
 
-              {/* Informações do Território Selecionado */}
-              {activeTerritory ? (
+              {/* Informações: Ponto ou Território */}
+              {exportTarget === 'point' && selectedPoint ? (
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-amber-400">Ponto Cartográfico</span>
+                      <h4 className="text-base font-bold text-white">{selectedPoint.titulo}</h4>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] uppercase font-bold tracking-wider opacity-60">Classificação</span>
+                      <p className="text-sm font-black text-amber-300">{selectedPoint.objeto || 'Registro Georreferenciado'}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-white/10 text-xs">
+                    <div>
+                      <span className="opacity-60 block text-[10px] uppercase">Autor / Região</span>
+                      <span className="font-bold">{selectedPoint.autor || 'Território NUGEP'}</span>
+                    </div>
+                    <div>
+                      <span className="opacity-60 block text-[10px] uppercase">Ano / Registro</span>
+                      <span className="font-bold">{selectedPoint.ano || new Date().getFullYear()}</span>
+                    </div>
+                    <div className="col-span-2 sm:col-span-1">
+                      <span className="opacity-60 block text-[10px] uppercase">Sistema Geodésico</span>
+                      <span className="font-bold">SIRGAS 2000 / WGS 84</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-black/20 border border-white/10 font-mono text-xs flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-gray-400 block uppercase">Coordenadas Oficiais</span>
+                      <span className="text-amber-300 font-bold">{selectedPoint.latitude.toFixed(6)}°, {selectedPoint.longitude.toFixed(6)}°</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${selectedPoint.latitude.toFixed(6)}, ${selectedPoint.longitude.toFixed(6)}`);
+                        showToast('Coordenadas copiadas!', 'info');
+                      }}
+                      className="text-[11px] text-[#A67C52] hover:underline"
+                    >
+                      Copiar
+                    </button>
+                  </div>
+
+                  <div className="pt-2 border-t border-white/10">
+                    <span className="text-[10px] uppercase font-bold tracking-wider opacity-60 block mb-1">
+                      Anotações e Parecer Técnico de Campo
+                    </span>
+                    <div className="p-3 rounded-xl bg-black/20 border border-white/10 text-xs text-gray-200 leading-relaxed whitespace-pre-wrap">
+                      {selectedPoint.anotacoes || 'Sem anotações complementares registradas para este ponto.'}
+                    </div>
+                  </div>
+                </div>
+              ) : activeTerritory ? (
                 <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1631,6 +1888,15 @@ export default function HoloMapPlatform() {
                     </div>
                   </div>
 
+                  {activeTerritory.descricao && (
+                    <div className="pt-2 border-t border-white/10">
+                      <span className="text-[10px] uppercase font-bold tracking-wider opacity-60 block mb-1">
+                        Parecer Técnico / Descrição
+                      </span>
+                      <p className="text-xs text-gray-200">{activeTerritory.descricao}</p>
+                    </div>
+                  )}
+
                   <div className="pt-2 border-t border-white/10">
                     <span className="text-[10px] uppercase font-bold tracking-wider opacity-60 block mb-1">
                       Coordenadas dos Vértices Perimetrais (Datum SIRGAS 2000 / WGS 84)
@@ -1648,7 +1914,7 @@ export default function HoloMapPlatform() {
                 </div>
               ) : (
                 <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-xs text-amber-300">
-                  Nenhum território específico selecionado.
+                  Nenhum registro selecionado para exportação.
                 </div>
               )}
             </div>
@@ -1660,13 +1926,13 @@ export default function HoloMapPlatform() {
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
                   onClick={() => setActiveModal(null)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-gray-300 transition-all"
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-gray-300 transition-all flex-1 sm:flex-initial"
                 >
                   Fechar
                 </button>
                 <button
                   onClick={triggerNativePrint}
-                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-[#A67C52] hover:bg-[#8F653E] text-white transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-[#A67C52] hover:bg-[#8F653E] text-white transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 flex-1 sm:flex-initial"
                 >
                   <Printer size={16} />
                   <span>Imprimir / Salvar em PDF</span>
@@ -1796,59 +2062,6 @@ export default function HoloMapPlatform() {
                   <div className={`w-10 h-6 rounded-full p-1 transition-colors ${activeLayers.includes('relevo') ? 'bg-[#A67C52]' : 'bg-white/20'}`}>
                     <div className={`w-4 h-4 rounded-full bg-white transition-transform ${activeLayers.includes('relevo') ? 'translate-x-4' : ''}`} />
                   </div>
-                </div>
-              </div>
-
-              {/* Seção de Voo Rápido para Cenários 3D Imediatos */}
-              <div className="pt-3 border-t border-white/10">
-                <label className="text-[10px] uppercase font-bold tracking-wider text-amber-400 block mb-2 flex items-center gap-1.5">
-                  <Sparkles size={12} />
-                  <span>Explorar Cenários 3D Imediatos</span>
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => flyToPreset('sp_buildings')}
-                    className="p-2.5 rounded-xl bg-white/5 hover:bg-[#A67C52]/20 border border-white/10 text-left transition-all group"
-                  >
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-white group-hover:text-amber-300">
-                      <Building2 size={13} />
-                      <span>Arranha-Céus 3D</span>
-                    </div>
-                    <span className="text-[10px] opacity-50 block mt-0.5">São Paulo / Centro</span>
-                  </button>
-
-                  <button
-                    onClick={() => flyToPreset('mountains')}
-                    className="p-2.5 rounded-xl bg-white/5 hover:bg-[#A67C52]/20 border border-white/10 text-left transition-all group"
-                  >
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-white group-hover:text-amber-300">
-                      <Mountain size={13} />
-                      <span>Montanhas DEM</span>
-                    </div>
-                    <span className="text-[10px] opacity-50 block mt-0.5">Serra dos Órgãos</span>
-                  </button>
-
-                  <button
-                    onClick={() => flyToPreset('globe_clouds')}
-                    className="p-2.5 rounded-xl bg-white/5 hover:bg-[#A67C52]/20 border border-white/10 text-left transition-all group"
-                  >
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-white group-hover:text-amber-300">
-                      <Cloud size={13} />
-                      <span>Nuvens & Globo</span>
-                    </div>
-                    <span className="text-[10px] opacity-50 block mt-0.5">Visão Orbital</span>
-                  </button>
-
-                  <button
-                    onClick={() => flyToPreset('nugep')}
-                    className="p-2.5 rounded-xl bg-white/5 hover:bg-[#A67C52]/20 border border-white/10 text-left transition-all group"
-                  >
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-white group-hover:text-amber-300">
-                      <Landmark size={13} />
-                      <span>Território NUGEP</span>
-                    </div>
-                    <span className="text-[10px] opacity-50 block mt-0.5">Alagoas Central</span>
-                  </button>
                 </div>
               </div>
             </div>
@@ -2104,9 +2317,10 @@ export default function HoloMapPlatform() {
       {/* =========================================================================
           DOCUMENTO OFICIAL PARA IMPRESSÃO EM PDF COM MARCA D'ÁGUA DO NUGEP
           ========================================================================= */}
-      <div className="print-only hidden print:block w-full text-black p-4 bg-white relative">
+      <div className="print-only hidden print:block w-full text-black p-6 bg-white relative">
         <div className="print-watermark">
-          NUGEP • NÚCLEO DE GESTÃO E PESQUISA{"\n"}DEMARCAÇÃO TERRITORIAL OFICIAL
+          NUGEP • NÚCLEO DE GESTÃO E PESQUISA{"\n"}
+          {exportTarget === 'point' ? 'MARCADOR GEORREFERENCIADO OFICIAL' : 'DEMARCAÇÃO TERRITORIAL OFICIAL'}
         </div>
 
         <div className="border-b-4 border-[#A67C52] pb-4 mb-6 flex items-center justify-between relative z-10">
@@ -2117,7 +2331,9 @@ export default function HoloMapPlatform() {
             <div>
               <h1 className="text-2xl font-black uppercase tracking-widest text-black">NUGEP MAPS</h1>
               <h2 className="text-xs font-bold uppercase tracking-wider text-gray-600">
-                Núcleo de Gestão e Pesquisa • Dossiê de Demarcação Territorial
+                {exportTarget === 'point'
+                  ? 'Núcleo de Gestão e Pesquisa • Ficha de Registro de Ponto Georreferenciado'
+                  : 'Núcleo de Gestão e Pesquisa • Dossiê de Demarcação Territorial'}
               </h2>
             </div>
           </div>
@@ -2133,7 +2349,60 @@ export default function HoloMapPlatform() {
           </div>
         )}
 
-        {activeTerritory && (
+        {/* IMPRESSÃO DE PONTO */}
+        {exportTarget === 'point' && selectedPoint && (
+          <div className="mb-6 p-5 border border-gray-300 rounded-2xl bg-gray-50 relative z-10 print-page-break space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase text-[#A67C52]">Ponto Cartográfico Registrado</span>
+                <h3 className="text-xl font-black text-black">{selectedPoint.titulo}</h3>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-bold uppercase text-gray-500">Classificação / Tipo</span>
+                <p className="text-sm font-bold text-black">{selectedPoint.objeto || 'Registro Georreferenciado'}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-xs">
+              <div>
+                <span className="font-bold text-gray-500 block">Autor / Localidade:</span>
+                <span className="text-black font-semibold">{selectedPoint.autor || 'Território NUGEP'}</span>
+              </div>
+              <div>
+                <span className="font-bold text-gray-500 block">Ano de Levantamento / Registro:</span>
+                <span className="font-semibold text-black">{selectedPoint.ano || new Date().getFullYear().toString()}</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-white border border-gray-200 rounded-xl">
+              <span className="text-[10px] font-bold uppercase text-gray-500 block mb-1">
+                Coordenadas Geográficas Oficiais (Datum SIRGAS 2000 / WGS 84)
+              </span>
+              <div className="grid grid-cols-2 gap-4 font-mono text-sm">
+                <div>
+                  <span className="text-gray-500 text-xs mr-2">LATITUDE:</span>
+                  <span className="font-bold text-black">{selectedPoint.latitude.toFixed(6)}°</span>
+                </div>
+                <div>
+                  <span className="text-gray-500 text-xs mr-2">LONGITUDE:</span>
+                  <span className="font-bold text-black">{selectedPoint.longitude.toFixed(6)}°</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <span className="font-bold text-gray-700 text-xs block mb-1 uppercase tracking-wider">
+                Anotações e Parecer Técnico de Campo:
+              </span>
+              <div className="p-4 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 leading-relaxed min-h-[80px] whitespace-pre-wrap font-sans">
+                {selectedPoint.anotacoes || 'Ponto georreferenciado registrado no sistema NUGEP MAPS sem restrições ou observações adicionais.'}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* IMPRESSÃO DE TERRITÓRIO */}
+        {exportTarget === 'territory' && activeTerritory && (
           <div className="mb-6 p-4 border border-gray-300 rounded-2xl bg-gray-50 relative z-10 print-page-break">
             <div className="flex justify-between items-center border-b pb-2 mb-3">
               <div>
