@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-scale: 1;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #050608;
+  color: #f3f4f6;
+  overflow: hidden;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Temas Liquid Glass */
+.theme-dark {
+  --glass-bg: rgba(10, 12, 16, 0.65);
+  --glass-bg-subtle: rgba(18, 22, 30, 0.45);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-strong: rgba(255, 255, 255, 0.16);
+  --glass-text: #f3f4f6;
+  --glass-text-muted: rgba(255, 255, 255, 0.5);
+  --glass-glow: rgba(198, 142, 92, 0.25);
+  --glass-surface: rgba(0, 0, 0, 0.4);
+}
+
+.theme-light {
+  --glass-bg: rgba(245, 247, 250, 0.75);
+  --glass-bg-subtle: rgba(255, 255, 255, 0.6);
+  --glass-border: rgba(0, 0, 0, 0.1);
+  --glass-border-strong: rgba(0, 0, 0, 0.18);
+  --glass-text: #111827;
+  --glass-text-muted: rgba(17, 24, 39, 0.6);
+  --glass-glow: rgba(166, 124, 82, 0.2);
+  --glass-surface: rgba(255, 255, 255, 0.7);
+}
+
+/* Utilitários Liquid Glass */
+.liquid-glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
+}
+
+.liquid-glass-subtle {
+  background: var(--glass-bg-subtle);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid var(--glass-border);
+}
+
+.liquid-glass-pop {
+  background: var(--glass-bg);
+  backdrop-filter: blur(36px) saturate(200%);
+  -webkit-backdrop-filter: blur(36px) saturate(200%);
+  border: 1px solid var(--glass-border-strong);
+  box-shadow: 0 16px 48px -8px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--glass-border);
+}
+
+/* Escalas de Interface */
+.scale-compact {
+  font-size: 0.9rem;
+}
+.scale-standard {
+  font-size: 1rem;
+}
+.scale-expanded {
+  font-size: 1.12rem;
+}
+
+/* Remover fundo branco e bordas nativas do Popup do Mapbox */
+.mapboxgl-popup-content {
+  background: transparent !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+.mapboxgl-popup-tip {
+  display: none !important;
+}
+
+/* Custom Scrollbar com visual vítreo */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* Suporte para impressão de relatórios */
+@media print {
+  body {
+    background-color: white !important;
+    color: black !important;
+    overflow: visible !important;
+  }
+}
+
