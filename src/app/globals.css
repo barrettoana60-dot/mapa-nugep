@@ -102,12 +102,80 @@ body {
   background: rgba(255, 255, 255, 0.35);
 }
 
-/* Suporte para impressão de relatórios */
+/* Marca d'Água do NUGEP */
+.watermark-nugep {
+  position: relative;
+  overflow: hidden;
+}
+
+.watermark-nugep::before {
+  content: "NUGEP • NÚCLEO DE GESTÃO E PESQUISA";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-30deg);
+  font-size: 3rem;
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  color: rgba(166, 124, 82, 0.08);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Suporte avançado para impressão de relatórios e dossiê com marca d'água */
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
   body {
-    background-color: white !important;
-    color: black !important;
+    background: #ffffff !important;
+    color: #000000 !important;
     overflow: visible !important;
+    font-size: 11pt;
+  }
+
+  /* Ocultar elementos interativos no PDF */
+  .no-print,
+  nav,
+  aside,
+  .mapboxgl-ctrl,
+  .mapboxgl-control-container,
+  header {
+    display: none !important;
+  }
+
+  /* Exibir container de impressão */
+  .print-only {
+    display: block !important;
+    position: relative !important;
+    width: 100% !important;
+  }
+
+  /* Marca d'água no PDF */
+  .print-watermark {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-35deg);
+    font-size: 42pt;
+    font-weight: 900;
+    letter-spacing: 0.25em;
+    color: rgba(166, 124, 82, 0.12) !important;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 0;
+    text-align: center;
+    line-height: 1.4;
+    white-space: pre-wrap;
+  }
+
+  .print-page-break {
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 }
+
 
