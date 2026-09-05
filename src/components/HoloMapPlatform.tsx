@@ -10,7 +10,7 @@ import {
   FileSpreadsheet, Edit3, Save, Sun, Moon, 
   RotateCcw, Hexagon, Globe, Building2, CloudSun,
   CheckCircle2, AlertCircle, FileText, MousePointer, Landmark,
-  Printer, ShieldCheck, Undo2, ChevronRight
+  Printer, ShieldCheck, Undo2, ChevronRight, Cloud, Sparkles
 } from 'lucide-react';
 
 // Tipagem dos Pontos Georreferenciados
@@ -119,15 +119,21 @@ export default function HoloMapPlatform() {
   const [selectedPoint, setSelectedPoint] = useState<ObjetoCultural | null>(null);
   const [activeTerritory, setActiveTerritory] = useState<DemarcatedTerritory | null>(null);
 
+  // URL para camada de nuvens de satélite em tempo real (RainViewer / Fallback)
+  const [cloudTileUrl, setCloudTileUrl] = useState<string>(
+    'https://tilecache.rainviewer.com/v2/satellite/1715000000/256/{z}/{x}/{y}/0/0_0.png'
+  );
+
   // Modos de ferramentas
   const [activeTool, setActiveTool] = useState<'navigate' | 'point' | 'measure' | 'polygon'>('navigate');
 
-  // Camadas 3D
+  // Camadas 3D (com nuvens e prédios ativados por padrão)
   const [activeLayers, setActiveLayers] = useState<string[]>([
     'relevo',
     'buildings',
     'satellite',
     'atmosphere',
+    'clouds',
     'territories',
     'markers'
   ]);
@@ -161,12 +167,12 @@ export default function HoloMapPlatform() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [printImage, setPrintImage] = useState<string | null>(null);
 
-  // Câmera do Mapa
+  // Câmera do Mapa (com pitch 55° para imersão 3D imediata)
   const [viewState, setViewState] = useState({
     longitude: -36.065,
     latitude: -9.17,
     zoom: 13,
-    pitch: 55,
+    pitch: 58,
     bearing: 20
   });
 
@@ -174,6 +180,19 @@ export default function HoloMapPlatform() {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
+
+  // Buscar última timestamp de satélite de nuvens do RainViewer na inicialização
+  useEffect(() => {
+    fetch('https://api.rainviewer.com/public/weather-maps.json')
+      .then(r => r.json())
+      .then(data => {
+        if (data?.satellite?.infrared?.length) {
+          const latest = data.satellite.infrared[data.satellite.infrared.length - 1];
+          setCloudTileUrl(`${data.host}${latest.path}/256/{z}/{x}/{y}/0/0_0.png`);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Carregar dados salvos do localStorage
   useEffect(() => {
@@ -250,7 +269,6 @@ export default function HoloMapPlatform() {
 
     setShowSearchDropdown(true);
 
-    // Detecção direta de coordenadas
     if (/^-?\d+[\.,]\d+[\s,;]+-?\d+[\.,]\d+$/.test(value.trim())) {
       setSearchSuggestions([{
         id: 'coord_exact',
@@ -288,11 +306,11 @@ export default function HoloMapPlatform() {
       const parts = item.place_name.trim().split(/[\s,;]+/).filter(Boolean);
       const lat = parseCoord(parts[0]);
       const lng = parseCoord(parts[1]);
-      setViewState(prev => ({ ...prev, longitude: lng, latitude: lat, zoom: 16, pitch: 55 }));
+      setViewState(prev => ({ ...prev, longitude: lng, latitude: lat, zoom: 16, pitch: 58 }));
       showToast(`Localizado: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
     } else {
       const [lng, lat] = item.center;
-      setViewState(prev => ({ ...prev, longitude: lng, latitude: lat, zoom: 16, pitch: 55 }));
+      setViewState(prev => ({ ...prev, longitude: lng, latitude: lat, zoom: 16, pitch: 58 }));
       showToast(`Localizado: ${item.text}`);
     }
   };
@@ -553,9 +571,58 @@ export default function HoloMapPlatform() {
       latitude: first.latitude,
       longitude: first.longitude,
       zoom: 14,
-      pitch: 50
+      pitch: 55
     }));
 
+    setActiveModal(null);
+  };
+
+  // Voos Rápidos de Demonstração 3D
+  const flyToPreset = (preset: 'sp_buildings' | 'mountains' | 'globe_clouds' | 'nugep') => {
+    if (preset === 'sp_buildings') {
+      // São Paulo / Av. Paulista: centenas de arranha-céus em 3D
+      setViewState({
+        longitude: -46.654,
+        latitude: -23.563,
+        zoom: 16.5,
+        pitch: 62,
+        bearing: 40
+      });
+      if (!activeLayers.includes('buildings')) setActiveLayers(prev => [...prev, 'buildings']);
+      showToast('Explorando Edificações 3D (São Paulo)', 'info');
+    } else if (preset === 'mountains') {
+      // Serra dos Órgãos / Dedo de Deus: relevo montanhoso dramático
+      setViewState({
+        longitude: -42.995,
+        latitude: -22.455,
+        zoom: 13.8,
+        pitch: 68,
+        bearing: 25
+      });
+      if (!activeLayers.includes('relevo')) setActiveLayers(prev => [...prev, 'relevo']);
+      showToast('Explorando Alto Relevo DEM 3D (Serra dos Órgãos)', 'info');
+    } else if (preset === 'globe_clouds') {
+      // Visão orbital do globo com nuvens e estrelas
+      setViewState({
+        longitude: -36.0,
+        latitude: -9.0,
+        zoom: 2.8,
+        pitch: 45,
+        bearing: 0
+      });
+      if (!activeLayers.includes('clouds')) setActiveLayers(prev => [...prev, 'clouds']);
+      if (!activeLayers.includes('atmosphere')) setActiveLayers(prev => [...prev, 'atmosphere']);
+      showToast('Visão Orbital: Nuvens e Atmosfera 3D', 'info');
+    } else if (preset === 'nugep') {
+      setViewState({
+        longitude: -36.065,
+        latitude: -9.17,
+        zoom: 13,
+        pitch: 58,
+        bearing: 20
+      });
+      showToast('Território Central NUGEP', 'info');
+    }
     setActiveModal(null);
   };
 
@@ -638,16 +705,13 @@ export default function HoloMapPlatform() {
       )}
 
       {/* =========================================================================
-          CONTROLES SUPERIORES FLUTUANTES (SEM NENHUMA BARRA FIXA!)
+          CONTROLES SUPERIORES FLUTUANTES (SEM BARRA HORIZONTAL FIXA!)
           ========================================================================= */}
 
-      {/* BRANDING: NUGEP MAPS + LOGO CLÁSSICA DO MUSEU */}
+      {/* BRANDING: NUGEP MAPS + LOGO DO MUSEU */}
       <div className="absolute top-4 left-4 z-30 pointer-events-auto">
         <div 
-          onClick={() => {
-            setViewState(prev => ({ ...prev, pitch: 55, bearing: 20, zoom: 13, latitude: -9.17, longitude: -36.065 }));
-            showToast('Centralizado no Território NUGEP');
-          }}
+          onClick={() => flyToPreset('nugep')}
           className="liquid-glass rounded-2xl px-4 py-2.5 flex items-center gap-3 border border-white/15 shadow-2xl cursor-pointer hover:bg-white/10 active:scale-95 transition-all"
           title="Centralizar Território"
         >
@@ -719,7 +783,7 @@ export default function HoloMapPlatform() {
       </div>
 
       {/* =========================================================================
-          TRILHO LATERAL ESQUERDO (ÚNICO LUGAR PARA ACESSO OPERACIONAL)
+          TRILHO LATERAL ESQUERDO (ACESSOS OPERACIONAIS NÃO DUPLICADOS)
           ========================================================================= */}
       <nav className="absolute left-4 top-20 bottom-4 w-12 z-20 liquid-glass rounded-2xl border border-white/15 shadow-2xl flex flex-col items-center justify-between py-3 pointer-events-auto">
         <div className="flex flex-col items-center gap-3">
@@ -761,7 +825,7 @@ export default function HoloMapPlatform() {
             />
           </label>
 
-          {/* Camadas 3D (SOMENTE ÍCONE - Sem texto 'Painel Cartográfico') */}
+          {/* Camadas 3D (SOMENTE O ÍCONE) */}
           <button
             onClick={() => setActiveModal(prev => prev === 'layers' ? null : 'layers')}
             className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-95 transition-all ${
@@ -769,7 +833,7 @@ export default function HoloMapPlatform() {
                 ? 'bg-[#A67C52] text-white shadow-lg' 
                 : 'hover:bg-white/10 opacity-70 hover:opacity-100'
             }`}
-            title="Camadas 3D e Satélite"
+            title="Camadas 3D, Satélite e Nuvens"
           >
             <Layers size={18} />
           </button>
@@ -799,7 +863,7 @@ export default function HoloMapPlatform() {
       </nav>
 
       {/* =========================================================================
-          PALETA FLUTUANTE DE DESENHO / CARTOGRAFIA (DIREITA - SEM FERRAMENTAS REPETIDAS)
+          PALETA FLUTUANTE DE DESENHO / CARTOGRAFIA (DIREITA)
           ========================================================================= */}
       <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 pointer-events-auto">
         <div className="liquid-glass rounded-2xl p-1.5 flex flex-col gap-1.5 border border-white/20 shadow-2xl">
@@ -1010,17 +1074,17 @@ export default function HoloMapPlatform() {
           projection={{ name: 'globe' }}
           minZoom={2}
           fog={activeLayers.includes('atmosphere') ? {
-            range: [0.8, 8],
-            color: isDark ? '#080b12' : '#dbe4f0',
-            'high-color': isDark ? '#161e2e' : '#94a9c9',
-            'space-color': '#000000',
-            'star-intensity': 0.85,
-            'horizon-blend': 0.18
+            range: [0.5, 8],
+            color: isDark ? '#101726' : '#d4e4fa',
+            'high-color': isDark ? '#1e293b' : '#60a5fa',
+            'space-color': '#020408',
+            'star-intensity': 0.95,
+            'horizon-blend': 0.3
           } : undefined}
         >
           <NavigationControl position="bottom-right" />
 
-          {/* DEM de Relevo Topográfico 3D */}
+          {/* DEM de Relevo Topográfico 3D (Montanhas e Elevações Reais) */}
           <Source 
             id="mapbox-dem" 
             type="raster-dem" 
@@ -1029,7 +1093,21 @@ export default function HoloMapPlatform() {
             maxzoom={14} 
           />
 
-          {/* Céu Atmosférico 3D */}
+          {/* Camada de Nuvens em Tempo Real (Satélite) */}
+          {activeLayers.includes('clouds') && cloudTileUrl && (
+            <Source id="realtime-clouds" type="raster" tiles={[cloudTileUrl]} tileSize={256}>
+              <Layer
+                id="clouds-layer"
+                type="raster"
+                paint={{
+                  'raster-opacity': 0.72,
+                  'raster-fade-duration': 300
+                }}
+              />
+            </Source>
+          )}
+
+          {/* Céu e Atmosfera 3D */}
           {activeLayers.includes('atmosphere') && (
             <Layer
               id="sky"
@@ -1037,25 +1115,41 @@ export default function HoloMapPlatform() {
               paint={{
                 'sky-type': 'atmosphere',
                 'sky-atmosphere-sun': [0.0, 90.0],
-                'sky-atmosphere-sun-intensity': 15
+                'sky-atmosphere-sun-intensity': 15,
+                'sky-atmosphere-halo-color': 'rgba(255, 255, 255, 0.75)',
+                'sky-atmosphere-color': isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(186, 230, 253, 0.85)'
               }}
             />
           )}
 
-          {/* Prédios em 3D */}
+          {/* Prédios e Edificações em 3D (Extrusão Volumétrica e Sombreamento) */}
           {activeLayers.includes('buildings') && (
             <Layer
               id="3d-buildings"
               source="composite"
               source-layer="building"
-              filter={['==', 'extrude', 'true']}
               type="fill-extrusion"
-              minzoom={14}
+              minzoom={11}
               paint={{
-                'fill-extrusion-color': isDark ? '#1e2638' : '#cbd5e1',
-                'fill-extrusion-height': ['get', 'height'],
-                'fill-extrusion-base': ['get', 'min_height'],
-                'fill-extrusion-opacity': 0.85
+                'fill-extrusion-color': [
+                  'interpolate',
+                  ['linear'],
+                  ['coalesce', ['get', 'height'], 15],
+                  0, isDark ? '#1e293b' : '#cbd5e1',
+                  30, isDark ? '#334155' : '#94a3b8',
+                  100, isDark ? '#475569' : '#64748b',
+                  200, isDark ? '#A67C52' : '#b45309'
+                ],
+                'fill-extrusion-height': [
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  11, 0,
+                  12, ['coalesce', ['get', 'height'], 16]
+                ],
+                'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+                'fill-extrusion-opacity': 0.88,
+                'fill-extrusion-ambient-occlusion-intensity': 0.65
               }}
             />
           )}
@@ -1204,7 +1298,6 @@ export default function HoloMapPlatform() {
           ========================================================================= */}
       {activeTerritory && (
         <aside className="absolute top-20 left-18 bottom-4 w-96 liquid-glass rounded-3xl p-6 border border-[#A67C52]/50 shadow-2xl z-30 flex flex-col overflow-hidden animate-in slide-in-from-left-4 duration-300 pointer-events-auto">
-          {/* Header do Painel do Território */}
           <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
             <div className="flex items-center gap-2">
               <div className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: activeTerritory.cor }} />
@@ -1216,7 +1309,6 @@ export default function HoloMapPlatform() {
           </div>
 
           <div className="flex-1 overflow-y-auto custom-scrollbar py-4 space-y-4">
-            {/* Nome do Território */}
             <div>
               <label className="text-[10px] uppercase font-bold tracking-wider opacity-50 block mb-1">Nome do Território</label>
               <input
@@ -1227,7 +1319,6 @@ export default function HoloMapPlatform() {
               />
             </div>
 
-            {/* Cor e Detalhes */}
             <div className="flex items-center gap-3">
               <div className="flex-1">
                 <label className="text-[10px] uppercase font-bold tracking-wider opacity-50 block mb-1">Cor da Demarcação</label>
@@ -1247,7 +1338,6 @@ export default function HoloMapPlatform() {
               </div>
             </div>
 
-            {/* Métricas do Território */}
             <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-2.5">
               <span className="text-[10px] uppercase font-bold tracking-wider text-amber-400 block">Métricas Geodésicas</span>
               <div className="grid grid-cols-2 gap-2 text-xs">
@@ -1270,7 +1360,6 @@ export default function HoloMapPlatform() {
               </div>
             </div>
 
-            {/* Descrição / Notas do Território */}
             <div>
               <label className="text-[10px] uppercase font-bold tracking-wider opacity-50 block mb-1">Descrição / Parecer Técnico</label>
               <textarea
@@ -1282,7 +1371,6 @@ export default function HoloMapPlatform() {
               />
             </div>
 
-            {/* Coordenadas dos Vértices */}
             <div>
               <label className="text-[10px] uppercase font-bold tracking-wider opacity-50 block mb-1">
                 Vértices do Perímetro ({activeTerritory.pontos.length})
@@ -1298,10 +1386,8 @@ export default function HoloMapPlatform() {
             </div>
           </div>
 
-          {/* AÇÕES CRÍTICAS NO TERRITÓRIO: SALVAR, EXPORTAR PDF E EXCLUIR */}
           <div className="pt-3 border-t border-white/10 shrink-0 space-y-2">
             <div className="flex gap-2">
-              {/* BOTÃO SALVAR TERRITÓRIO */}
               <button
                 onClick={handleSaveActiveTerritory}
                 className="flex-1 py-3 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#A67C52] hover:bg-[#8F653E] text-white transition-all shadow-lg flex items-center justify-center gap-1.5 active:scale-95"
@@ -1310,7 +1396,6 @@ export default function HoloMapPlatform() {
                 <span>Salvar Território</span>
               </button>
 
-              {/* BOTÃO EXCLUIR TERRITÓRIO */}
               <button
                 onClick={handleDeleteActiveTerritory}
                 className="p-3 rounded-xl text-xs bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all"
@@ -1320,7 +1405,6 @@ export default function HoloMapPlatform() {
               </button>
             </div>
 
-            {/* BOTÃO EXPORTAR PDF DO TERRITÓRIO COM MARCA D'ÁGUA */}
             <button
               onClick={() => handleExportTerritoryPDF(activeTerritory)}
               className="w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider liquid-glass border border-white/20 hover:bg-white/10 text-white transition-all flex items-center justify-center gap-2 active:scale-95"
@@ -1547,7 +1631,6 @@ export default function HoloMapPlatform() {
                     </div>
                   </div>
 
-                  {/* Tabela de Vértices */}
                   <div className="pt-2 border-t border-white/10">
                     <span className="text-[10px] uppercase font-bold tracking-wider opacity-60 block mb-1">
                       Coordenadas dos Vértices Perimetrais (Datum SIRGAS 2000 / WGS 84)
@@ -1594,14 +1677,14 @@ export default function HoloMapPlatform() {
         </div>
       )}
 
-      {/* 3. MODAL DE CAMADAS 3D */}
+      {/* 3. MODAL DE CAMADAS 3D, SATÉLITE E NUVENS */}
       {activeModal === 'layers' && (
         <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="liquid-glass rounded-3xl p-6 w-full max-w-md border border-white/20 shadow-2xl relative">
-            <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-6">
+          <div className="liquid-glass rounded-3xl p-6 w-full max-w-md border border-white/20 shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-5">
               <div className="flex items-center gap-2">
                 <Layers size={20} className="text-[#A67C52]" />
-                <h3 className="font-bold text-base">Camadas 3D e Satélite</h3>
+                <h3 className="font-bold text-base">Camadas e Perspectiva 3D</h3>
               </div>
               <button onClick={() => setActiveModal(null)} className="p-1.5 hover:bg-white/10 rounded-xl">
                 <X size={18} />
@@ -1609,8 +1692,9 @@ export default function HoloMapPlatform() {
             </div>
 
             <div className="space-y-4">
+              {/* Espectro Base */}
               <div>
-                <label className="text-[10px] uppercase font-bold tracking-wider opacity-60 block mb-2">Base do Mapa</label>
+                <label className="text-[10px] uppercase font-bold tracking-wider opacity-60 block mb-2">Base Cartográfica</label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => {
@@ -1637,30 +1721,16 @@ export default function HoloMapPlatform() {
                     }`}
                   >
                     <Building2 size={24} />
-                    <span>{isDark ? 'Dark Vetorial' : 'Light Vetorial'}</span>
+                    <span>{isDark ? 'Dark 3D' : 'Light 3D'}</span>
                   </button>
                 </div>
               </div>
 
-              <div className="space-y-2 pt-2">
-                <label className="text-[10px] uppercase font-bold tracking-wider opacity-60 block mb-1">Modelagem 3D</label>
+              {/* Toggles de Modelagem 3D */}
+              <div className="space-y-2 pt-1">
+                <label className="text-[10px] uppercase font-bold tracking-wider opacity-60 block mb-1">Modelagem Tridimensional Ativa</label>
 
-                <div 
-                  onClick={() => toggleLayer('relevo')}
-                  className="flex items-center justify-between p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition-all"
-                >
-                  <div className="flex items-center gap-3">
-                    <Mountain size={18} className="text-amber-400" />
-                    <div>
-                      <p className="text-xs font-semibold">Alto Relevo Topográfico (DEM)</p>
-                      <p className="text-[10px] opacity-60">Montanhas e elevações 3D</p>
-                    </div>
-                  </div>
-                  <div className={`w-10 h-6 rounded-full p-1 transition-colors ${activeLayers.includes('relevo') ? 'bg-[#A67C52]' : 'bg-white/20'}`}>
-                    <div className={`w-4 h-4 rounded-full bg-white transition-transform ${activeLayers.includes('relevo') ? 'translate-x-4' : ''}`} />
-                  </div>
-                </div>
-
+                {/* Prédios e Edificações 3D */}
                 <div 
                   onClick={() => toggleLayer('buildings')}
                   className="flex items-center justify-between p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition-all"
@@ -1668,8 +1738,8 @@ export default function HoloMapPlatform() {
                   <div className="flex items-center gap-3">
                     <Building2 size={18} className="text-indigo-400" />
                     <div>
-                      <p className="text-xs font-semibold">Prédios em 3D (Extrusão)</p>
-                      <p className="text-[10px] opacity-60">Edificações urbanas volumétricas</p>
+                      <p className="text-xs font-semibold">Prédios e Edificações 3D</p>
+                      <p className="text-[10px] opacity-60">Extrusão volumétrica de edifícios urbanos</p>
                     </div>
                   </div>
                   <div className={`w-10 h-6 rounded-full p-1 transition-colors ${activeLayers.includes('buildings') ? 'bg-[#A67C52]' : 'bg-white/20'}`}>
@@ -1677,20 +1747,108 @@ export default function HoloMapPlatform() {
                   </div>
                 </div>
 
+                {/* Nuvens em Tempo Real */}
+                <div 
+                  onClick={() => toggleLayer('clouds')}
+                  className="flex items-center justify-between p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <Cloud size={18} className="text-cyan-400" />
+                    <div>
+                      <p className="text-xs font-semibold">Nuvens 3D em Tempo Real</p>
+                      <p className="text-[10px] opacity-60">Cobertura de nuvens via satélite meteorológico</p>
+                    </div>
+                  </div>
+                  <div className={`w-10 h-6 rounded-full p-1 transition-colors ${activeLayers.includes('clouds') ? 'bg-[#A67C52]' : 'bg-white/20'}`}>
+                    <div className={`w-4 h-4 rounded-full bg-white transition-transform ${activeLayers.includes('clouds') ? 'translate-x-4' : ''}`} />
+                  </div>
+                </div>
+
+                {/* Céu e Atmosfera */}
                 <div 
                   onClick={() => toggleLayer('atmosphere')}
                   className="flex items-center justify-between p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition-all"
                 >
                   <div className="flex items-center gap-3">
-                    <CloudSun size={18} className="text-sky-400" />
+                    <CloudSun size={18} className="text-amber-400" />
                     <div>
-                      <p className="text-xs font-semibold">Céu, Nuvens e Atmosfera 3D</p>
-                      <p className="text-[10px] opacity-60">Iluminação e horizonte celestial</p>
+                      <p className="text-xs font-semibold">Céu, Sol e Atmosfera 3D</p>
+                      <p className="text-[10px] opacity-60">Iluminação celestial, horizonte e estrelas</p>
                     </div>
                   </div>
                   <div className={`w-10 h-6 rounded-full p-1 transition-colors ${activeLayers.includes('atmosphere') ? 'bg-[#A67C52]' : 'bg-white/20'}`}>
                     <div className={`w-4 h-4 rounded-full bg-white transition-transform ${activeLayers.includes('atmosphere') ? 'translate-x-4' : ''}`} />
                   </div>
+                </div>
+
+                {/* Relevo Topográfico */}
+                <div 
+                  onClick={() => toggleLayer('relevo')}
+                  className="flex items-center justify-between p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <Mountain size={18} className="text-emerald-400" />
+                    <div>
+                      <p className="text-xs font-semibold">Alto Relevo Topográfico (DEM 1.8x)</p>
+                      <p className="text-[10px] opacity-60">Montanhas e vales em relevo real</p>
+                    </div>
+                  </div>
+                  <div className={`w-10 h-6 rounded-full p-1 transition-colors ${activeLayers.includes('relevo') ? 'bg-[#A67C52]' : 'bg-white/20'}`}>
+                    <div className={`w-4 h-4 rounded-full bg-white transition-transform ${activeLayers.includes('relevo') ? 'translate-x-4' : ''}`} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção de Voo Rápido para Cenários 3D Imediatos */}
+              <div className="pt-3 border-t border-white/10">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-amber-400 block mb-2 flex items-center gap-1.5">
+                  <Sparkles size={12} />
+                  <span>Explorar Cenários 3D Imediatos</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => flyToPreset('sp_buildings')}
+                    className="p-2.5 rounded-xl bg-white/5 hover:bg-[#A67C52]/20 border border-white/10 text-left transition-all group"
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-white group-hover:text-amber-300">
+                      <Building2 size={13} />
+                      <span>Arranha-Céus 3D</span>
+                    </div>
+                    <span className="text-[10px] opacity-50 block mt-0.5">São Paulo / Centro</span>
+                  </button>
+
+                  <button
+                    onClick={() => flyToPreset('mountains')}
+                    className="p-2.5 rounded-xl bg-white/5 hover:bg-[#A67C52]/20 border border-white/10 text-left transition-all group"
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-white group-hover:text-amber-300">
+                      <Mountain size={13} />
+                      <span>Montanhas DEM</span>
+                    </div>
+                    <span className="text-[10px] opacity-50 block mt-0.5">Serra dos Órgãos</span>
+                  </button>
+
+                  <button
+                    onClick={() => flyToPreset('globe_clouds')}
+                    className="p-2.5 rounded-xl bg-white/5 hover:bg-[#A67C52]/20 border border-white/10 text-left transition-all group"
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-white group-hover:text-amber-300">
+                      <Cloud size={13} />
+                      <span>Nuvens & Globo</span>
+                    </div>
+                    <span className="text-[10px] opacity-50 block mt-0.5">Visão Orbital</span>
+                  </button>
+
+                  <button
+                    onClick={() => flyToPreset('nugep')}
+                    className="p-2.5 rounded-xl bg-white/5 hover:bg-[#A67C52]/20 border border-white/10 text-left transition-all group"
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-white group-hover:text-amber-300">
+                      <Landmark size={13} />
+                      <span>Território NUGEP</span>
+                    </div>
+                    <span className="text-[10px] opacity-50 block mt-0.5">Alagoas Central</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1935,7 +2093,8 @@ export default function HoloMapPlatform() {
               <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-xs space-y-2">
                 <p><span className="font-bold text-white">Sistema:</span> NUGEP MAPS</p>
                 <p><span className="font-bold text-white">Geodésia:</span> Datum SIRGAS 2000 / WGS 84</p>
-                <p><span className="font-bold text-white">Relevo:</span> DEM Topográfico 3D</p>
+                <p><span className="font-bold text-white">Relevo:</span> DEM Topográfico 3D (1.8x)</p>
+                <p><span className="font-bold text-white">Nuvens & Satélite:</span> Cobertura de Nuvens em Tempo Real</p>
               </div>
             </div>
           </div>
@@ -1946,7 +2105,6 @@ export default function HoloMapPlatform() {
           DOCUMENTO OFICIAL PARA IMPRESSÃO EM PDF COM MARCA D'ÁGUA DO NUGEP
           ========================================================================= */}
       <div className="print-only hidden print:block w-full text-black p-4 bg-white relative">
-        {/* Marca d'água oficial */}
         <div className="print-watermark">
           NUGEP • NÚCLEO DE GESTÃO E PESQUISA{"\n"}DEMARCAÇÃO TERRITORIAL OFICIAL
         </div>
