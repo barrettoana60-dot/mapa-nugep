@@ -362,7 +362,7 @@ export default function HoloMapPlatform() {
     return null;
   };
 
-  // Buscar sugestões de endereço via Photon (OpenStreetMap com CORS aberto e alta disponibilidade)
+  // Buscar sugestões de endereço — Brasil + Nordeste como prioridade
   const fetchAddressSuggestions = async (query: string): Promise<any[]> => {
     const q = query.trim();
     if (!q || q.length < 2) return [];
@@ -378,52 +378,103 @@ export default function HoloMapPlatform() {
       }];
     }
 
-    // 1. Photon (Komoot / OSM)
+    // Centro de bias: Nordeste do Brasil (Maceió/Alagoas)
+    const BIAS_LAT = -9.17;
+    const BIAS_LNG = -36.06;
+
+    // 1. Nominatim OpenStreetMap — confiável, gratuito, sem CORS para fetch
     try {
-      const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=default`);
+      const params = new URLSearchParams({
+        q,
+        format: 'json',
+        limit: '7',
+        addressdetails: '1',
+        countrycodes: 'br',          // Restringir ao Brasil
+        'accept-language': 'pt-BR',
+        viewbox: `${BIAS_LNG - 15},${BIAS_LAT + 10},${BIAS_LNG + 15},${BIAS_LAT - 10}`,
+        bounded: '0',                // viewbox como preferência, não restrição rígida
+      });
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?${params}`,
+        { headers: { 'Accept-Language': 'pt-BR' } }
+      );
       if (res.ok) {
         const data = await res.json();
-        if (data?.features && data.features.length > 0) {
-          return data.features.map((f: any, idx: number) => {
-            const p = f.properties || {};
-            const streetInfo = p.street ? `${p.street}${p.housenumber ? ', ' + p.housenumber : ''}` : '';
-            const locality = [p.district || p.suburb, p.city, p.state, p.country].filter(Boolean).join(', ');
-            const title = p.name || streetInfo || p.city || 'Localidade';
-            const subtitle = [streetInfo, locality].filter(Boolean).join(' • ') || p.country || '';
+        if (Array.isArray(data) && data.length > 0) {
+          return data.map((item: any) => {
+            const addr = item.address || {};
+            const displayParts = item.display_name.split(',').map((s: string) => s.trim());
+            const title = addr.road || addr.amenity || addr.building || addr.tourism
+              || addr.leisure || displayParts[0] || item.name || 'Localidade';
+            const subtitle = [
+              addr.suburb || addr.neighbourhood,
+              addr.city || addr.town || addr.village || addr.municipality,
+              addr.state
+            ].filter(Boolean).join(', ');
             return {
-              id: `photon_${idx}_${p.osm_id || Date.now()}`,
+              id: `osm_${item.place_id}`,
               text: title,
-              place_name: subtitle ? `${title} — ${subtitle}` : title,
-              center: f.geometry.coordinates as [number, number] // [lng, lat]
+              place_name: subtitle ? `${title} — ${subtitle}` : item.display_name,
+              center: [parseFloat(item.lon), parseFloat(item.lat)] as [number, number]
             };
           });
         }
       }
     } catch (e) {
-      console.warn('Photon falhou, tentando fallback:', e);
+      console.warn('Nominatim falhou:', e);
     }
 
-    // 2. Fallback: Nominatim OpenStreetMap
+    // 2. Photon (Komoot / OSM) — com proximity para Nordeste
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=1`);
+      const params = new URLSearchParams({
+        q,
+        limit: '6',
+        lang: 'default',
+        lat: String(BIAS_LAT),
+        lon: String(BIAS_LNG),
+      });
+      const res = await fetch(`https://photon.komoot.io/api/?${params}`);
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          return data.map((item: any) => ({
-            id: `osm_${item.place_id}`,
-            text: item.name || item.display_name.split(',')[0],
-            place_name: item.display_name,
-            center: [parseFloat(item.lon), parseFloat(item.lat)] as [number, number]
-          }));
+        if (data?.features && data.features.length > 0) {
+          // Filtrar primeiro por Brasil, depois aceita outros se não houver resultado BR
+          const brFeatures = data.features.filter((f: any) =>
+            (f.properties?.country || '').toLowerCase().includes('brasil') ||
+            (f.properties?.countrycode || '').toLowerCase() === 'br'
+          );
+          const features = brFeatures.length > 0 ? brFeatures : data.features;
+          return features.map((f: any, idx: number) => {
+            const p = f.properties || {};
+            const streetInfo = p.street ? `${p.street}${p.housenumber ? ', ' + p.housenumber : ''}` : '';
+            const locality = [p.suburb || p.district, p.city, p.state].filter(Boolean).join(', ');
+            const title = p.name || streetInfo || p.city || 'Localidade';
+            const subtitle = [streetInfo, locality].filter(Boolean).join(' • ');
+            return {
+              id: `photon_${idx}_${p.osm_id || Date.now()}`,
+              text: title,
+              place_name: subtitle ? `${title} — ${subtitle}` : title,
+              center: f.geometry.coordinates as [number, number]
+            };
+          });
         }
       }
     } catch (e) {
-      console.warn('Fallback Nominatim falhou:', e);
+      console.warn('Photon falhou:', e);
     }
 
-    // 3. Fallback: Mapbox Geocoding (se o token tiver permissão)
+    // 3. Fallback: Mapbox Geocoding com bias para Brasil
     try {
-      const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${MAPBOX_TOKEN}&limit=5&language=pt`);
+      const params = new URLSearchParams({
+        access_token: MAPBOX_TOKEN,
+        limit: '5',
+        language: 'pt',
+        country: 'br',
+        proximity: `${BIAS_LNG},${BIAS_LAT}`,
+        types: 'address,place,poi,neighborhood,locality,district',
+      });
+      const res = await fetch(
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?${params}`
+      );
       if (res.ok) {
         const data = await res.json();
         if (data?.features && data.features.length > 0) {
@@ -439,6 +490,7 @@ export default function HoloMapPlatform() {
 
     return [];
   };
+
 
   // Efeito de clique tátil e foco na barra de busca
   const handleSearchClick = () => {
