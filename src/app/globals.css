@@ -4,6 +4,14 @@
 
 :root {
   --font-scale: 1;
+  --nugep-blue: #0F3E8C;
+  --nugep-blue-light: #1E4DB7;
+  --nugep-gold: #F4B205;
+  --nugep-gold-light: #FBBF24;
+  --nugep-orange: #F57602;
+  --nugep-red: #CB0F32;
+  --nugep-green: #0E8953;
+  --nugep-cream: #F8E3BB;
 }
 
 body {
@@ -15,7 +23,7 @@ body {
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
-/* Temas Liquid Glass */
+/* Temas Liquid Glass com Paleta Oficial NUGEP */
 .theme-dark {
   --glass-bg: rgba(10, 12, 16, 0.65);
   --glass-bg-subtle: rgba(18, 22, 30, 0.45);
@@ -23,7 +31,7 @@ body {
   --glass-border-strong: rgba(255, 255, 255, 0.16);
   --glass-text: #f3f4f6;
   --glass-text-muted: rgba(255, 255, 255, 0.5);
-  --glass-glow: rgba(198, 142, 92, 0.25);
+  --glass-glow: rgba(244, 178, 5, 0.25);
   --glass-surface: rgba(0, 0, 0, 0.4);
 }
 
@@ -34,7 +42,7 @@ body {
   --glass-border-strong: rgba(0, 0, 0, 0.18);
   --glass-text: #111827;
   --glass-text-muted: rgba(17, 24, 39, 0.6);
-  --glass-glow: rgba(166, 124, 82, 0.2);
+  --glass-glow: rgba(15, 62, 140, 0.2);
   --glass-surface: rgba(255, 255, 255, 0.7);
 }
 
@@ -131,7 +139,7 @@ body {
   font-size: 3rem;
   font-weight: 900;
   letter-spacing: 0.3em;
-  color: rgba(166, 124, 82, 0.08);
+  color: rgba(15, 62, 140, 0.07);
   white-space: nowrap;
   pointer-events: none;
   z-index: 1;
@@ -221,7 +229,7 @@ body {
     font-size: 32pt !important;
     font-weight: 900 !important;
     letter-spacing: 0.2em !important;
-    color: rgba(166, 124, 82, 0.07) !important;
+    color: rgba(15, 62, 140, 0.06) !important;
     text-transform: uppercase !important;
     pointer-events: none !important;
     text-align: center !important;
