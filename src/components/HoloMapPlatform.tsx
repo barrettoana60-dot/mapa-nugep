@@ -964,10 +964,6 @@ export default function HoloMapPlatform() {
             <span className={isSearchFocused ? 'hidden md:inline' : 'inline'}>NUGEP</span>
             <span className="text-[#F4B205] group-hover:text-[#FBBF24] transition-colors duration-300">MAPS</span>
           </div>
-          <div className="hidden lg:flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-bold text-emerald-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>3D</span>
-          </div>
         </div>
 
         {/* BARRA DE BUSCA CENTRAL COM EXPANSÃO E ANIMAÇÃO AO CLICAR */}
@@ -1092,33 +1088,7 @@ export default function HoloMapPlatform() {
                     </button>
                   </div>
 
-                  {/* 1. Ação Rápida Principal: Centralizar NUGEP */}
-                  {(searchCategoryFilter === 'all' || searchCategoryFilter === 'coords') && (
-                    <div 
-                      onClick={() => {
-                        flyToPreset('nugep');
-                        setIsSearchFocused(false);
-                        setShowSearchDropdown(false);
-                      }}
-                      className="p-3 rounded-2xl bg-white/5 hover:bg-[#0F3E8C]/25 border border-white/10 hover:border-[#F4B205]/40 cursor-pointer transition-all duration-200 flex items-center justify-between group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-black/40 border border-[#F4B205]/40 flex items-center justify-center p-0.5 group-hover:scale-110 transition-transform">
-                          <img src={NUGEP_LOGO} alt="NUGEP" className="w-full h-full object-contain" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs sm:text-sm font-bold text-white group-hover:text-[#F4B205] transition-colors">Sede Central NUGEP</span>
-                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#F4B205]/15 text-[#F4B205] font-bold border border-[#F4B205]/30">PADRÃO</span>
-                          </div>
-                          <span className="text-[11px] opacity-60">Lat: -9.1700°, Lng: -36.0650° • Perspectiva 3D</span>
-                        </div>
-                      </div>
-                      <ChevronRight size={16} className="text-[#F4B205] opacity-60 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-                    </div>
-                  )}
-
-                  {/* 2. Territórios Demarcados Salvos */}
+                  {/* 1. Territórios Demarcados Salvos */}
                   {(searchCategoryFilter === 'all' || searchCategoryFilter === 'territories') && demarcatedTerritories.length > 0 && (
                     <div className="flex flex-col gap-1.5">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-[#F4B205] opacity-80 px-1">
@@ -1277,14 +1247,14 @@ export default function HoloMapPlatform() {
           ========================================================================= */}
       <nav 
         style={uiZoomStyle}
-        className="ui-scale-target fixed md:absolute bottom-2 md:bottom-4 inset-x-2 md:inset-x-auto md:left-4 md:top-20 md:w-12 h-13 md:h-auto z-40 liquid-glass rounded-2xl border border-white/15 shadow-2xl flex flex-row md:flex-col items-center justify-around md:justify-between px-2 py-1 md:px-0 md:py-3 pointer-events-auto origin-left anim-slide-up-spring"
+        className="ui-scale-target fixed md:absolute bottom-2 md:bottom-4 inset-x-2 md:inset-x-auto md:left-4 md:top-20 md:w-13 h-13 md:h-auto z-40 liquid-glass rounded-2xl border border-white/15 shadow-2xl flex flex-row md:flex-col items-center justify-around md:justify-between px-2 py-1 md:px-0 md:py-3.5 pointer-events-auto origin-left anim-slide-up-spring overflow-visible"
       >
-        <div className="flex flex-row md:flex-col items-center gap-2 md:gap-3">
+        <div className="flex flex-row md:flex-col items-center gap-2 md:gap-3 overflow-visible">
           {/* Territórios e Pontos Demarcados (Lista) */}
-          <div className="relative group flex items-center">
+          <div className="relative group flex items-center justify-center">
             <button
               onClick={() => setActiveModal(prev => prev === 'territories_list' ? null : 'territories_list')}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-all duration-300 relative btn-ripple ${
+              className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-all duration-300 ${
                 activeModal === 'territories_list' 
                   ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
                   : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
@@ -1292,13 +1262,13 @@ export default function HoloMapPlatform() {
               title="Territórios e Pontos Demarcados"
             >
               <Hexagon size={18} />
-              {(demarcatedTerritories.length > 0 || objetos.length > 0) && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#F4B205] text-black text-[9px] font-black rounded-full flex items-center justify-center shadow anim-badge-pop">
-                  {demarcatedTerritories.length + objetos.length}
-                </span>
-              )}
             </button>
-            <div className="hidden md:block nugep-tooltip left-12">Territórios & Pontos</div>
+            {(demarcatedTerritories.length > 0 || objetos.length > 0) && (
+              <span className="absolute -top-1.5 -right-1.5 z-30 min-w-4.5 h-4.5 px-1 bg-[#F4B205] text-black text-[9px] font-black rounded-full flex items-center justify-center shadow-lg anim-badge-pop pointer-events-none ring-2 ring-black/70">
+                {demarcatedTerritories.length + objetos.length}
+              </span>
+            )}
+            <div className="hidden md:block nugep-tooltip left-13">Territórios & Pontos</div>
           </div>
 
           {/* Importar Planilha */}
@@ -1854,7 +1824,7 @@ export default function HoloMapPlatform() {
       {activeTerritory && (
         <aside 
           style={uiZoomStyle}
-          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-18 md:top-20 md:w-96 max-h-[75vh] md:max-h-none liquid-glass rounded-3xl p-5 sm:p-6 border border-[#F4B205]/40 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto origin-bottom-left md:origin-top-left"
+          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-18 md:top-20 md:w-96 max-h-[82vh] md:max-h-[calc(100vh-6.5rem)] liquid-glass rounded-3xl p-4 sm:p-6 border border-[#F4B205]/40 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto origin-bottom-left md:origin-top-left"
         >
           <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
             <div className="flex items-center gap-2">
@@ -1988,7 +1958,7 @@ export default function HoloMapPlatform() {
       {selectedPoint && (
         <aside 
           style={uiZoomStyle}
-          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-18 md:top-20 md:w-96 max-h-[75vh] md:max-h-none liquid-glass rounded-3xl p-5 sm:p-6 border border-[#F4B205]/40 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto origin-bottom-left md:origin-top-left"
+          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-18 md:top-20 md:w-96 max-h-[82vh] md:max-h-[calc(100vh-6.5rem)] liquid-glass rounded-3xl p-4 sm:p-6 border border-[#F4B205]/40 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto origin-bottom-left md:origin-top-left"
         >
           <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
             <div className="flex items-center gap-2">
@@ -2119,10 +2089,10 @@ export default function HoloMapPlatform() {
 
       {/* 1. LISTA DE TERRITÓRIOS E PONTOS DEMARCADOS */}
       {activeModal === 'territories_list' && (
-        <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 modal-backdrop-enter">
+        <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 modal-backdrop-enter">
           <div 
             style={uiZoomStyle}
-            className="ui-scale-target liquid-glass rounded-3xl p-5 sm:p-7 w-full max-w-lg border border-white/20 shadow-2xl relative max-h-[88vh] flex flex-col modal-content-enter"
+            className="ui-scale-target liquid-glass rounded-3xl p-4 sm:p-6 w-[94vw] sm:w-full max-w-lg border border-white/20 shadow-2xl relative max-h-[86vh] flex flex-col modal-content-enter overflow-hidden"
           >
             <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0 mb-3">
               <div className="flex items-center gap-2.5">
@@ -2160,7 +2130,7 @@ export default function HoloMapPlatform() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2.5">
+            <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-2.5">
               {territoriesListTab === 'territories' ? (
                 demarcatedTerritories.length === 0 ? (
                   <div className="py-12 text-center opacity-60 anim-fade-blur">
@@ -2183,11 +2153,11 @@ export default function HoloMapPlatform() {
                       }}
                       className={`p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between gap-3 hover:bg-white/10 cursor-pointer transition-all duration-300 group hover-lift hover:border-white/20 anim-stagger-${Math.min(idx + 1, 8)}`}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-4 h-4 rounded-full shrink-0 transition-transform duration-300 group-hover:scale-125" style={{ backgroundColor: terr.cor }} />
-                        <div>
-                          <h4 className="font-semibold text-sm group-hover:text-amber-300 transition-colors duration-300">{terr.nome}</h4>
-                          <p className="text-[11px] opacity-60">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-4 h-4 rounded-full shrink-0 transition-transform duration-300 group-hover:scale-125 shadow-sm" style={{ backgroundColor: terr.cor }} />
+                        <div className="min-w-0">
+                          <h4 className="font-semibold text-sm group-hover:text-amber-300 transition-colors duration-300 truncate">{terr.nome}</h4>
+                          <p className="text-[11px] opacity-60 truncate">
                             {terr.areaHectares} hectares | {terr.areaKm2} km² | {terr.pontos.length} vértices
                           </p>
                         </div>
