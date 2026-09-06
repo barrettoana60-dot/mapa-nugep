@@ -161,11 +161,14 @@ export default function HoloMapPlatform() {
     'layers' | 'settings' | 'info' | 'spreadsheet' | 'territories_list' | 'export_dossier' | null
   >(null);
 
-  // Busca no mapa
+  // Busca no mapa com animações e estado spotlight
   const [searchQuery, setSearchQuery] = useState('');
   const [searchSuggestions, setSearchSuggestions] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isSearchClicked, setIsSearchClicked] = useState(false);
+  const [searchCategoryFilter, setSearchCategoryFilter] = useState<'all' | 'territories' | 'points' | 'coords'>('all');
 
   // Medição e rascunho de polígono
   const [measurementPoints, setMeasurementPoints] = useState<[number, number][]>([]);
@@ -227,6 +230,28 @@ export default function HoloMapPlatform() {
       localStorage.setItem('nugep_territories_v4', JSON.stringify(demarcatedTerritories));
     } catch (e) {}
   }, [theme, uiScale, objetos, demarcatedTerritories]);
+
+  // Atalhos de teclado globais (⌘K / Ctrl+K para busca e ESC para fechar)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        setIsSearchFocused(true);
+        setIsSearchClicked(true);
+        setShowSearchDropdown(true);
+        setTimeout(() => setIsSearchClicked(false), 320);
+      } else if (e.key === 'Escape') {
+        if (isSearchFocused || showSearchDropdown) {
+          setIsSearchFocused(false);
+          setShowSearchDropdown(false);
+          searchInputRef.current?.blur();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSearchFocused, showSearchDropdown]);
 
   // Alternador de Camadas
   const toggleLayer = (layerKey: string) => {
@@ -359,17 +384,28 @@ export default function HoloMapPlatform() {
     return [];
   };
 
-  // Busca por endereço ou coordenada com debounce
+  // Efeito de clique tátil e foco na barra de busca
+  const handleSearchClick = () => {
+    setIsSearchClicked(true);
+    setIsSearchFocused(true);
+    setShowSearchDropdown(true);
+    setTimeout(() => setIsSearchClicked(false), 320);
+  };
+
+  // Busca por endereço, território, ponto cultural ou coordenadas com debounce
   const handleSearchInput = (value: string) => {
     setSearchQuery(value);
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
 
+    const q = value.trim().toLowerCase();
+
+    // 1. Verificar se é coordenada geográfica direta
     const coords = parseCoordinates(value);
     if (coords) {
       setSearchSuggestions([{
         id: 'coord_exact',
-        text: 'Coordenada Geográfica',
-        place_name: `Lat: ${coords[1].toFixed(6)}°, Lng: ${coords[0].toFixed(6)}° (Pressione Enter para ir)`,
+        text: 'Coordenada Geográfica GPS',
+        place_name: `Lat: ${coords[1].toFixed(6)}°, Lng: ${coords[0].toFixed(6)}° (SIRGAS 2000)`,
         center: coords,
         isCoord: true
       }]);
@@ -377,11 +413,45 @@ export default function HoloMapPlatform() {
       return;
     }
 
-    if (value.trim().length < 2) {
+    if (q.length < 2) {
       setSearchSuggestions([]);
-      setShowSearchDropdown(false);
       setIsSearching(false);
       return;
+    }
+
+    // 2. Busca local instantânea nos territórios demarcados e pontos culturais
+    const localTerritories = demarcatedTerritories.filter(t => 
+      t.nome.toLowerCase().includes(q) || (t.descricao && t.descricao.toLowerCase().includes(q))
+    ).map(t => {
+      const lats = t.pontos.map(p => p[1]);
+      const lngs = t.pontos.map(p => p[0]);
+      return {
+        id: `local_terr_${t.id}`,
+        text: t.nome,
+        place_name: `Território Demarcado • ${t.areaHectares} ha • ${t.pontos.length} vértices`,
+        center: [(Math.min(...lngs) + Math.max(...lngs)) / 2, (Math.min(...lats) + Math.max(...lats)) / 2] as [number, number],
+        isTerritory: true,
+        territoryData: t
+      };
+    });
+
+    const localPoints = objetos.filter(o =>
+      o.titulo.toLowerCase().includes(q) ||
+      (o.objeto && o.objeto.toLowerCase().includes(q)) ||
+      (o.autor && o.autor.toLowerCase().includes(q))
+    ).map(o => ({
+      id: `local_point_${o.id}`,
+      text: o.titulo,
+      place_name: `${o.objeto || 'Patrimônio Cultural'} • ${o.autor || 'Território'} (${o.latitude.toFixed(4)}, ${o.longitude.toFixed(4)})`,
+      center: [o.longitude, o.latitude] as [number, number],
+      isPoint: true,
+      pointData: o
+    }));
+
+    // Se houver dados locais demarcados, exibe na hora
+    if (localTerritories.length > 0 || localPoints.length > 0) {
+      setSearchSuggestions([...localTerritories, ...localPoints]);
+      setShowSearchDropdown(true);
     }
 
     setIsSearching(true);
@@ -390,13 +460,13 @@ export default function HoloMapPlatform() {
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const results = await fetchAddressSuggestions(value);
-        setSearchSuggestions(results);
+        setSearchSuggestions([...localTerritories, ...localPoints, ...results]);
       } catch (err) {
         console.error(err);
       } finally {
         setIsSearching(false);
       }
-    }, 300);
+    }, 280);
   };
 
   // Submeter busca ao pressionar Enter ou clicar no botão de busca
@@ -410,6 +480,7 @@ export default function HoloMapPlatform() {
     if (coords) {
       setViewState(prev => ({ ...prev, longitude: coords[0], latitude: coords[1], zoom: 16, pitch: 58 }));
       setShowSearchDropdown(false);
+      setIsSearchFocused(false);
       showToast(`Localizado: ${coords[1].toFixed(5)}°, ${coords[0].toFixed(5)}°`, 'success');
       return;
     }
@@ -436,6 +507,13 @@ export default function HoloMapPlatform() {
 
   const handleSelectSuggestion = (item: any) => {
     setShowSearchDropdown(false);
+    setIsSearchFocused(false);
+    if (item.isTerritory && item.territoryData) {
+      setActiveTerritory(item.territoryData);
+    }
+    if (item.isPoint && item.pointData) {
+      setSelectedPoint(item.pointData);
+    }
     if (item.center && Array.isArray(item.center)) {
       const [lng, lat] = item.center;
       setViewState(prev => ({ ...prev, longitude: lng, latitude: lat, zoom: 16, pitch: 58 }));
@@ -854,40 +932,66 @@ export default function HoloMapPlatform() {
         </div>
       )}
 
+      {/* OVERLAY DE FOCO / SPOTLIGHT DA BUSCA */}
+      {isSearchFocused && (
+        <div 
+          onClick={() => {
+            setIsSearchFocused(false);
+            setShowSearchDropdown(false);
+          }}
+          className="fixed inset-0 z-30 bg-black/45 backdrop-blur-[2px] transition-all duration-300 pointer-events-auto animate-in fade-in"
+        />
+      )}
+
       {/* =========================================================================
           BARRA SUPERIOR RESPONSIVA: BRANDING + BUSCA
           ========================================================================= */}
       <div 
         style={uiZoomStyle}
-        className="ui-scale-target absolute top-2 sm:top-4 inset-x-2 sm:inset-x-4 z-30 flex items-center justify-between gap-2 sm:gap-4 pointer-events-none origin-top anim-fade-blur"
+        className="ui-scale-target absolute top-2 sm:top-4 inset-x-2 sm:inset-x-4 z-40 flex items-center justify-between gap-2 sm:gap-4 pointer-events-none origin-top anim-fade-blur"
       >
         {/* BRANDING: NUGEP MAPS + LOGO OFICIAL DO NUGEP */}
         <div 
           onClick={() => flyToPreset('nugep')}
-          className="liquid-glass rounded-2xl px-3 sm:px-4 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3 border border-white/15 shadow-2xl cursor-pointer hover:bg-white/10 active:scale-95 transition-all duration-300 pointer-events-auto shrink-0 hover-lift group"
+          className="liquid-glass rounded-2xl px-3 sm:px-4 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3 border border-white/15 shadow-2xl cursor-pointer hover:bg-white/10 active:scale-95 transition-all duration-300 pointer-events-auto shrink-0 hover-lift group relative overflow-hidden"
           title="Centralizar Território NUGEP"
         >
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-black/40 border border-[#F4B205]/40 flex items-center justify-center shadow-inner overflow-hidden p-0.5 group-hover:border-[#F4B205]/70 transition-all duration-300">
+          <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-black/40 border border-[#F4B205]/40 flex items-center justify-center shadow-inner overflow-hidden p-0.5 group-hover:border-[#F4B205]/70 transition-all duration-300 group-hover:scale-105">
             <img src={NUGEP_LOGO} alt="NUGEP MAPS" className="w-full h-full object-contain filter drop-shadow group-hover:scale-110 transition-transform duration-300" />
           </div>
-          <div className="flex items-center gap-1 font-bold tracking-widest text-xs sm:text-sm text-white">
-            <span>NUGEP</span>
+          <div className="flex items-center gap-1.5 font-bold tracking-widest text-xs sm:text-sm text-white">
+            <span className={isSearchFocused ? 'hidden md:inline' : 'inline'}>NUGEP</span>
             <span className="text-[#F4B205] group-hover:text-[#FBBF24] transition-colors duration-300">MAPS</span>
+          </div>
+          <div className="hidden lg:flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-bold text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>3D</span>
           </div>
         </div>
 
-        {/* BARRA DE BUSCA CENTRAL SUSPENSA NO MAPA */}
-        <div className="flex-1 max-w-[460px] pointer-events-auto relative">
+        {/* BARRA DE BUSCA CENTRAL COM EXPANSÃO E ANIMAÇÃO AO CLICAR */}
+        <div className={`pointer-events-auto relative search-container-wrap ${
+          isSearchFocused ? 'flex-1 max-w-[620px]' : 'flex-1 max-w-[340px] sm:max-w-[440px]'
+        }`}>
+          {/* Halo Beam luminoso ao redor da barra quando ativa */}
+          {isSearchFocused && <div className="search-glow-halo" />}
+
           <form 
             onSubmit={handleSearchSubmit}
-            className="search-bar-modern liquid-glass rounded-2xl p-1 sm:p-1.5 flex items-center gap-1.5 sm:gap-2 border border-white/20 shadow-2xl"
+            onClick={handleSearchClick}
+            className={`search-bar-modern liquid-glass rounded-2xl p-1 sm:p-1.5 flex items-center gap-1.5 sm:gap-2 border border-white/20 shadow-2xl transition-all duration-300 ${
+              isSearchFocused ? 'is-focused' : 'hover:border-white/35'
+            } ${isSearchClicked ? 'search-bar-clicked' : ''}`}
           >
             <button 
               type="submit" 
-              className="pl-2 sm:pl-3 text-[#F4B205] hover:scale-125 active:scale-90 transition-transform duration-300 cursor-pointer focus:outline-none shrink-0"
+              className={`pl-2 sm:pl-3 text-[#F4B205] transition-all duration-300 cursor-pointer focus:outline-none shrink-0 ${
+                isSearchFocused ? 'search-icon-active scale-115' : 'hover:scale-125 active:scale-90'
+              }`}
               title="Buscar no mapa (Enter)"
             >
-              <Search size={15} />
+              <Search size={16} />
             </button>
             <input
               ref={searchInputRef}
@@ -895,10 +999,11 @@ export default function HoloMapPlatform() {
               value={searchQuery}
               onChange={e => handleSearchInput(e.target.value)}
               onFocus={() => {
-                if (searchSuggestions.length > 0) setShowSearchDropdown(true);
+                setIsSearchFocused(true);
+                setShowSearchDropdown(true);
               }}
-              placeholder="Buscar endereço ou coordenadas (-9.17, -36.06)..."
-              className="w-full bg-transparent text-xs sm:text-sm outline-none placeholder:text-gray-400/60 font-medium transition-colors duration-300 focus:placeholder:text-[#F4B205]/40"
+              placeholder={isSearchFocused ? "Digite endereço, território ou coordenadas GPS..." : "Buscar no mapa ou coordenadas (-9.17, -36.06)..."}
+              className="w-full bg-transparent text-xs sm:text-sm outline-none placeholder:text-gray-400/60 font-medium transition-colors duration-300 focus:placeholder:text-[#F4B205]/45 text-white"
             />
             {isSearching && (
               <div className="w-3.5 h-3.5 border-2 border-[#F4B205] border-t-transparent rounded-full animate-spin shrink-0 mr-1" />
@@ -906,30 +1011,262 @@ export default function HoloMapPlatform() {
             {searchQuery && (
               <button
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   setSearchQuery('');
                   setSearchSuggestions([]);
-                  setShowSearchDropdown(false);
                 }}
-                className="p-1.5 hover:bg-white/10 rounded-full opacity-60 hover:opacity-100 mr-1 transition-all duration-200 hover:rotate-90"
+                className="p-1.5 hover:bg-white/10 rounded-full opacity-60 hover:opacity-100 mr-1 transition-all duration-200 hover:rotate-90 text-gray-300 hover:text-white"
+                title="Limpar busca"
               >
                 <X size={13} />
               </button>
             )}
+
+            {/* Indicador de Atalho Moderno */}
+            <div className="hidden sm:flex items-center pr-1.5 shrink-0">
+              {isSearchFocused ? (
+                <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded-lg bg-white/10 text-[#F4B205] border border-[#F4B205]/30 shadow-sm animate-in fade-in">
+                  ESC
+                </kbd>
+              ) : (
+                <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded-lg bg-white/5 text-white/40 border border-white/10 shadow-sm group-hover:border-[#F4B205]/40 transition-colors">
+                  ⌘K
+                </kbd>
+              )}
+            </div>
           </form>
 
-          {showSearchDropdown && searchSuggestions.length > 0 && (
-            <div className="absolute left-0 right-0 top-full mt-2 w-full liquid-glass rounded-2xl border border-white/20 overflow-hidden shadow-2xl z-50 flex flex-col max-h-60 overflow-y-auto custom-scrollbar search-dropdown-enter">
-              {searchSuggestions.map((item, idx) => (
-                <div
-                  key={item.id}
-                  onClick={() => handleSelectSuggestion(item)}
-                  className={`px-4 py-2.5 hover:bg-[#0F3E8C]/20 cursor-pointer border-b border-white/5 last:border-0 flex flex-col gap-0.5 transition-all duration-200 hover:pl-5 anim-stagger-${Math.min(idx + 1, 8)}`}
-                >
-                  <span className="text-xs sm:text-sm font-semibold">{item.text}</span>
-                  <span className="text-[11px] opacity-60 truncate">{item.place_name}</span>
+          {/* SPOTLIGHT DROPDOWN: SUGESTÕES & PAINEL DE DESCOBERTA RÁPIDA */}
+          {showSearchDropdown && isSearchFocused && (
+            <div className="absolute left-0 right-0 top-full mt-2.5 w-full liquid-glass rounded-3xl border border-white/20 overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.7)] z-50 flex flex-col max-h-[75vh] overflow-y-auto custom-scrollbar search-dropdown-enter backdrop-blur-2xl">
+              
+              {/* QUANDO O USUÁRIO AINDA NÃO DIGITOU OU BUSCA VAZIA: PAINEL SPOTLIGHT RÁPIDO */}
+              {searchQuery.trim().length === 0 ? (
+                <div className="p-3 sm:p-4 flex flex-col gap-3">
+                  
+                  {/* Chips de Categorias Rápidas */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1">
+                    <button 
+                      onClick={() => setSearchCategoryFilter('all')}
+                      className={`px-3 py-1 rounded-xl text-[11px] font-bold transition-all shrink-0 ${
+                        searchCategoryFilter === 'all' 
+                          ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md' 
+                          : 'bg-white/5 hover:bg-white/10 text-gray-300'
+                      }`}
+                    >
+                      Explorar Tudo
+                    </button>
+                    <button 
+                      onClick={() => setSearchCategoryFilter('territories')}
+                      className={`px-3 py-1 rounded-xl text-[11px] font-bold transition-all shrink-0 flex items-center gap-1 ${
+                        searchCategoryFilter === 'territories' 
+                          ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md' 
+                          : 'bg-white/5 hover:bg-white/10 text-gray-300'
+                      }`}
+                    >
+                      <Hexagon size={12} />
+                      <span>Territórios ({demarcatedTerritories.length})</span>
+                    </button>
+                    <button 
+                      onClick={() => setSearchCategoryFilter('points')}
+                      className={`px-3 py-1 rounded-xl text-[11px] font-bold transition-all shrink-0 flex items-center gap-1 ${
+                        searchCategoryFilter === 'points' 
+                          ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md' 
+                          : 'bg-white/5 hover:bg-white/10 text-gray-300'
+                      }`}
+                    >
+                      <MapPin size={12} />
+                      <span>Pontos ({objetos.length})</span>
+                    </button>
+                    <button 
+                      onClick={() => setSearchCategoryFilter('coords')}
+                      className={`px-3 py-1 rounded-xl text-[11px] font-bold transition-all shrink-0 flex items-center gap-1 ${
+                        searchCategoryFilter === 'coords' 
+                          ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md' 
+                          : 'bg-white/5 hover:bg-white/10 text-gray-300'
+                      }`}
+                    >
+                      <Compass size={12} />
+                      <span>GPS SIRGAS</span>
+                    </button>
+                  </div>
+
+                  {/* 1. Ação Rápida Principal: Centralizar NUGEP */}
+                  {(searchCategoryFilter === 'all' || searchCategoryFilter === 'coords') && (
+                    <div 
+                      onClick={() => {
+                        flyToPreset('nugep');
+                        setIsSearchFocused(false);
+                        setShowSearchDropdown(false);
+                      }}
+                      className="p-3 rounded-2xl bg-white/5 hover:bg-[#0F3E8C]/25 border border-white/10 hover:border-[#F4B205]/40 cursor-pointer transition-all duration-200 flex items-center justify-between group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-black/40 border border-[#F4B205]/40 flex items-center justify-center p-0.5 group-hover:scale-110 transition-transform">
+                          <img src={NUGEP_LOGO} alt="NUGEP" className="w-full h-full object-contain" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs sm:text-sm font-bold text-white group-hover:text-[#F4B205] transition-colors">Sede Central NUGEP</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#F4B205]/15 text-[#F4B205] font-bold border border-[#F4B205]/30">PADRÃO</span>
+                          </div>
+                          <span className="text-[11px] opacity-60">Lat: -9.1700°, Lng: -36.0650° • Perspectiva 3D</span>
+                        </div>
+                      </div>
+                      <ChevronRight size={16} className="text-[#F4B205] opacity-60 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                    </div>
+                  )}
+
+                  {/* 2. Territórios Demarcados Salvos */}
+                  {(searchCategoryFilter === 'all' || searchCategoryFilter === 'territories') && demarcatedTerritories.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#F4B205] opacity-80 px-1">
+                        Territórios Demarcados Salvos ({demarcatedTerritories.length})
+                      </span>
+                      {demarcatedTerritories.slice(0, 4).map((terr) => (
+                        <div
+                          key={terr.id}
+                          onClick={() => {
+                            setActiveTerritory(terr);
+                            const lats = terr.pontos.map(p => p[1]);
+                            const lngs = terr.pontos.map(p => p[0]);
+                            setViewState(prev => ({
+                              ...prev,
+                              latitude: (Math.min(...lats) + Math.max(...lats)) / 2,
+                              longitude: (Math.min(...lngs) + Math.max(...lngs)) / 2,
+                              zoom: 16,
+                              pitch: 58
+                            }));
+                            setIsSearchFocused(false);
+                            setShowSearchDropdown(false);
+                            showToast(`Território: ${terr.nome}`, 'info');
+                          }}
+                          className="p-2.5 rounded-2xl bg-white/5 hover:bg-[#0F3E8C]/25 border border-white/10 hover:border-white/25 cursor-pointer transition-all duration-200 flex items-center justify-between group"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-3.5 h-3.5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: terr.cor }} />
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-white group-hover:text-[#F4B205] transition-colors truncate">{terr.nome}</p>
+                              <p className="text-[10px] opacity-60 truncate">{terr.areaHectares} ha • {terr.pontos.length} vértices</p>
+                            </div>
+                          </div>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-white/10 text-gray-300 shrink-0">Ver no 3D</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 3. Pontos Culturais Marcados */}
+                  {(searchCategoryFilter === 'all' || searchCategoryFilter === 'points') && objetos.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#F4B205] opacity-80 px-1">
+                        Pontos Culturais Marcados ({objetos.length})
+                      </span>
+                      {objetos.slice(0, 3).map((obj) => (
+                        <div
+                          key={obj.id}
+                          onClick={() => {
+                            setSelectedPoint(obj);
+                            setViewState(prev => ({ ...prev, latitude: obj.latitude, longitude: obj.longitude, zoom: 17, pitch: 58 }));
+                            setIsSearchFocused(false);
+                            setShowSearchDropdown(false);
+                            showToast(`Ponto: ${obj.titulo}`, 'info');
+                          }}
+                          className="p-2.5 rounded-2xl bg-white/5 hover:bg-[#0F3E8C]/25 border border-white/10 hover:border-white/25 cursor-pointer transition-all duration-200 flex items-center justify-between group"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-7 h-7 rounded-xl bg-[#0F3E8C]/20 border border-[#F4B205]/40 flex items-center justify-center text-[#F4B205] shrink-0">
+                              <MapPin size={13} />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-white group-hover:text-[#F4B205] transition-colors truncate">{obj.titulo}</p>
+                              <p className="text-[10px] opacity-60 truncate">{obj.objeto || 'Patrimônio'} ({obj.latitude.toFixed(4)}, {obj.longitude.toFixed(4)})</p>
+                            </div>
+                          </div>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-white/10 text-gray-300 shrink-0">Localizar</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 4. Sugestão de Coordenadas GPS */}
+                  {(searchCategoryFilter === 'all' || searchCategoryFilter === 'coords') && (
+                    <div 
+                      onClick={() => {
+                        handleSearchInput('-9.1700, -36.0650');
+                      }}
+                      className="p-2.5 rounded-2xl bg-white/5 hover:bg-[#0F3E8C]/20 border border-dashed border-white/15 cursor-pointer transition-all flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Compass size={14} className="text-[#F4B205]" />
+                        <span className="text-xs font-semibold text-gray-200">Exemplo GPS: -9.1700, -36.0650</span>
+                      </div>
+                      <span className="text-[10px] text-[#F4B205] font-bold">Inserir</span>
+                    </div>
+                  )}
+
+                  {/* Rodapé Informativo com Dica */}
+                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[10px] opacity-60 px-1">
+                    <span>Dica: Digite qualquer rua, bairro, cidade ou coordenada GPS</span>
+                    <span className="hidden sm:inline">ESC para fechar</span>
+                  </div>
+
                 </div>
-              ))}
+              ) : (
+                /* QUANDO O USUÁRIO DIGITOU: RESULTADOS DE BUSCA */
+                <div>
+                  {searchSuggestions.length === 0 && !isSearching ? (
+                    <div className="p-6 text-center opacity-70">
+                      <Search size={28} className="mx-auto mb-2 opacity-40 text-[#F4B205]" />
+                      <p className="text-xs font-semibold">Nenhum resultado encontrado para "{searchQuery}"</p>
+                      <p className="text-[11px] opacity-60 mt-1">Verifique a ortografia ou tente digitar coordenadas como -9.17, -36.06</p>
+                    </div>
+                  ) : (
+                    <div>
+                      {searchSuggestions.map((item, idx) => (
+                        <div
+                          key={item.id || idx}
+                          onClick={() => handleSelectSuggestion(item)}
+                          className={`px-4 py-3 hover:bg-[#0F3E8C]/25 cursor-pointer border-b border-white/5 last:border-0 flex items-center justify-between gap-3 transition-all duration-200 hover:pl-5 group anim-stagger-${Math.min(idx + 1, 8)}`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                              item.isTerritory 
+                                ? 'bg-amber-500/20 border-amber-500/50 text-[#F4B205]' 
+                                : item.isPoint 
+                                  ? 'bg-[#0F3E8C]/30 border-[#F4B205]/40 text-[#F4B205]' 
+                                  : 'bg-white/10 border-white/15 text-gray-300'
+                            }`}>
+                              {item.isTerritory ? <Hexagon size={15} /> : <MapPin size={15} />}
+                            </div>
+                            <div className="flex flex-col gap-0.5 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs sm:text-sm font-bold text-white group-hover:text-[#F4B205] transition-colors truncate">
+                                  {item.text}
+                                </span>
+                                {item.isTerritory && (
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-[#F4B205] font-bold border border-amber-500/30">
+                                    TERRITÓRIO
+                                  </span>
+                                )}
+                                {item.isPoint && (
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#0F3E8C]/30 text-amber-300 font-bold border border-blue-400/30">
+                                    PONTO
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] opacity-60 truncate">{item.place_name}</span>
+                            </div>
+                          </div>
+                          <ChevronRight size={16} className="text-[#F4B205] opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all shrink-0" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           )}
         </div>
@@ -944,81 +1281,96 @@ export default function HoloMapPlatform() {
       >
         <div className="flex flex-row md:flex-col items-center gap-2 md:gap-3">
           {/* Territórios e Pontos Demarcados (Lista) */}
-          <button
-            onClick={() => setActiveModal(prev => prev === 'territories_list' ? null : 'territories_list')}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-all duration-300 relative btn-ripple ${
-              activeModal === 'territories_list' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
-            }`}
-            title="Territórios e Pontos Demarcados"
-          >
-            <Hexagon size={18} />
-            {(demarcatedTerritories.length > 0 || objetos.length > 0) && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#F4B205] text-black text-[9px] font-black rounded-full flex items-center justify-center shadow anim-badge-pop">
-                {demarcatedTerritories.length + objetos.length}
-              </span>
-            )}
-          </button>
+          <div className="relative group flex items-center">
+            <button
+              onClick={() => setActiveModal(prev => prev === 'territories_list' ? null : 'territories_list')}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-all duration-300 relative btn-ripple ${
+                activeModal === 'territories_list' 
+                  ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                  : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
+              }`}
+              title="Territórios e Pontos Demarcados"
+            >
+              <Hexagon size={18} />
+              {(demarcatedTerritories.length > 0 || objetos.length > 0) && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#F4B205] text-black text-[9px] font-black rounded-full flex items-center justify-center shadow anim-badge-pop">
+                  {demarcatedTerritories.length + objetos.length}
+                </span>
+              )}
+            </button>
+            <div className="hidden md:block nugep-tooltip left-12">Territórios & Pontos</div>
+          </div>
 
           {/* Importar Planilha */}
-          <label 
-            className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all duration-300 opacity-70 hover:opacity-100 hover:scale-110 cursor-pointer relative btn-ripple"
-            title="Importar Planilha (CSV / Excel)"
-          >
-            {isProcessing ? (
-              <div className="w-4 h-4 border-2 border-[#F4B205] border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Upload size={18} />
-            )}
-            <input 
-              ref={fileInputRef}
-              type="file" 
-              accept=".csv,.txt,.tsv,.pdf" 
-              className="hidden" 
-              onChange={handleSpreadsheetUpload}
-              disabled={isProcessing}
-            />
-          </label>
+          <div className="relative group flex items-center">
+            <label 
+              className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all duration-300 opacity-70 hover:opacity-100 hover:scale-110 cursor-pointer relative btn-ripple"
+              title="Importar Planilha (CSV / Excel)"
+            >
+              {isProcessing ? (
+                <div className="w-4 h-4 border-2 border-[#F4B205] border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Upload size={18} />
+              )}
+              <input 
+                ref={fileInputRef}
+                type="file" 
+                accept=".csv,.txt,.tsv,.pdf" 
+                className="hidden" 
+                onChange={handleSpreadsheetUpload}
+                disabled={isProcessing}
+              />
+            </label>
+            <div className="hidden md:block nugep-tooltip left-12">Importar Planilha</div>
+          </div>
 
           {/* Camadas 3D (SOMENTE O ÍCONE) */}
-          <button
-            onClick={() => setActiveModal(prev => prev === 'layers' ? null : 'layers')}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-all duration-300 btn-ripple ${
-              activeModal === 'layers' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
-            }`}
-            title="Camadas 3D e Satélite"
-          >
-            <Layers size={18} />
-          </button>
+          <div className="relative group flex items-center">
+            <button
+              onClick={() => setActiveModal(prev => prev === 'layers' ? null : 'layers')}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-all duration-300 btn-ripple ${
+                activeModal === 'layers' 
+                  ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                  : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
+              }`}
+              title="Camadas 3D e Satélite"
+            >
+              <Layers size={18} />
+            </button>
+            <div className="hidden md:block nugep-tooltip left-12">Camadas 3D & Satélite</div>
+          </div>
         </div>
 
         <div className="flex flex-row md:flex-col items-center gap-2 md:gap-3">
-          <button
-            onClick={() => setActiveModal(prev => prev === 'settings' ? null : 'settings')}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-all duration-300 btn-ripple ${
-              activeModal === 'settings' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110 hover:rotate-45'
-            }`}
-            title="Configurações (Tema Claro/Escuro, Escala)"
-          >
-            <Settings size={18} />
-          </button>
+          <div className="relative group flex items-center">
+            <button
+              onClick={() => setActiveModal(prev => prev === 'settings' ? null : 'settings')}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-all duration-300 btn-ripple ${
+                activeModal === 'settings' 
+                  ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                  : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110 hover:rotate-45'
+              }`}
+              title="Configurações (Tema Claro/Escuro, Escala)"
+            >
+              <Settings size={18} />
+            </button>
+            <div className="hidden md:block nugep-tooltip left-12">Configurações</div>
+          </div>
 
-          <button
-            onClick={() => setActiveModal(prev => prev === 'info' ? null : 'info')}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-all duration-300 btn-ripple ${
-              activeModal === 'info' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
-            }`}
-            title="Sobre o NUGEP MAPS"
-          >
-            <Info size={18} />
-          </button>
+          <div className="relative group flex items-center">
+            <button
+              onClick={() => setActiveModal(prev => prev === 'info' ? null : 'info')}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-all duration-300 btn-ripple ${
+                activeModal === 'info' 
+                  ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                  : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
+              }`}
+              title="Sobre o NUGEP MAPS"
+            >
+              <Info size={18} />
+            </button>
+            <div className="hidden md:block nugep-tooltip left-12">Sobre o NUGEP MAPS</div>
+          </div>
         </div>
       </nav>
 
@@ -1031,102 +1383,120 @@ export default function HoloMapPlatform() {
       >
         <div className="liquid-glass rounded-2xl p-1.5 flex flex-col gap-1.5 border border-white/20 shadow-2xl">
           {/* Navegação Padrão */}
-          <button
-            onClick={() => setActiveTool('navigate')}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 btn-ripple ${
-              activeTool === 'navigate' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40 anim-glow-pulse' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
-            }`}
-            title="Navegação / Mover"
-          >
-            <MousePointer size={16} />
-          </button>
+          <div className="relative group flex items-center">
+            <button
+              onClick={() => setActiveTool('navigate')}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 btn-ripple ${
+                activeTool === 'navigate' 
+                  ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                  : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
+              }`}
+              title="Navegação / Mover"
+            >
+              <MousePointer size={16} />
+            </button>
+            <div className="hidden md:block nugep-tooltip right-12">Mover / Navegar</div>
+          </div>
 
           {/* Demarcar Ponto */}
-          <button
-            onClick={() => {
-              setActiveTool('point');
-              showToast('Clique no mapa para marcar um ponto georreferenciado.', 'info');
-            }}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 btn-ripple ${
-              activeTool === 'point' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40 anim-glow-pulse' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
-            }`}
-            title="Demarcar Ponto no Mapa"
-          >
-            <MapPin size={16} />
-          </button>
+          <div className="relative group flex items-center">
+            <button
+              onClick={() => {
+                setActiveTool('point');
+                showToast('Clique no mapa para marcar um ponto georreferenciado.', 'info');
+              }}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 btn-ripple ${
+                activeTool === 'point' 
+                  ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                  : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
+              }`}
+              title="Demarcar Ponto no Mapa"
+            >
+              <MapPin size={16} />
+            </button>
+            <div className="hidden md:block nugep-tooltip right-12">Demarcar Ponto GPS</div>
+          </div>
 
           {/* Medir Distância */}
-          <button
-            onClick={() => {
-              if (activeTool === 'measure') {
-                setActiveTool('navigate');
-                setMeasurementPoints([]);
-              } else {
-                setActiveTool('measure');
-                setMeasurementPoints([]);
-                showToast('Clique no mapa para traçar a rota de medição.', 'info');
-              }
-            }}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 btn-ripple ${
-              activeTool === 'measure' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40 anim-glow-pulse' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
-            }`}
-            title="Medir Distância (Régua)"
-          >
-            <Ruler size={16} />
-          </button>
+          <div className="relative group flex items-center">
+            <button
+              onClick={() => {
+                if (activeTool === 'measure') {
+                  setActiveTool('navigate');
+                  setMeasurementPoints([]);
+                } else {
+                  setActiveTool('measure');
+                  setMeasurementPoints([]);
+                  showToast('Clique no mapa para traçar a rota de medição.', 'info');
+                }
+              }}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 btn-ripple ${
+                activeTool === 'measure' 
+                  ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                  : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
+              }`}
+              title="Medir Distância (Régua)"
+            >
+              <Ruler size={16} />
+            </button>
+            <div className="hidden md:block nugep-tooltip right-12">Régua Geodésica</div>
+          </div>
 
           {/* Demarcar Território (Polígono) */}
-          <button
-            onClick={() => {
-              if (activeTool === 'polygon') {
-                setActiveTool('navigate');
-                setPolygonDraft([]);
-              } else {
-                setActiveTool('polygon');
-                setPolygonDraft([]);
-                showToast('Clique no mapa para adicionar os vértices do território.', 'info');
-              }
-            }}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 btn-ripple ${
-              activeTool === 'polygon' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40 anim-glow-pulse' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
-            }`}
-            title="Demarcar Território (Polígono)"
-          >
-            <Hexagon size={16} />
-          </button>
+          <div className="relative group flex items-center">
+            <button
+              onClick={() => {
+                if (activeTool === 'polygon') {
+                  setActiveTool('navigate');
+                  setPolygonDraft([]);
+                } else {
+                  setActiveTool('polygon');
+                  setPolygonDraft([]);
+                  showToast('Clique no mapa para adicionar os vértices do território.', 'info');
+                }
+              }}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 btn-ripple ${
+                activeTool === 'polygon' 
+                  ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                  : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
+              }`}
+              title="Demarcar Território (Polígono)"
+            >
+              <Hexagon size={16} />
+            </button>
+            <div className="hidden md:block nugep-tooltip right-12">Demarcar Território</div>
+          </div>
 
           <div className="w-full h-[1px] bg-white/10 my-0.5 divider-shimmer" />
 
           {/* Alternar Visão 3D / 2D */}
-          <button
-            onClick={toggle3DCamera}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 font-bold text-xs btn-ripple ${
-              viewState.pitch > 20 
-                ? 'bg-[#0F3E8C]/40 border border-[#F4B205] text-[#F4B205] anim-glow-pulse' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
-            }`}
-            title="Alternar Perspectiva 3D/2D"
-          >
-            {viewState.pitch > 20 ? '3D' : '2D'}
-          </button>
+          <div className="relative group flex items-center">
+            <button
+              onClick={toggle3DCamera}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 font-bold text-xs btn-ripple ${
+                viewState.pitch > 20 
+                  ? 'bg-[#0F3E8C]/40 border border-[#F4B205] text-[#F4B205] anim-glow-pulse' 
+                  : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
+              }`}
+              title="Alternar Perspectiva 3D/2D"
+            >
+              {viewState.pitch > 20 ? '3D' : '2D'}
+            </button>
+            <div className="hidden md:block nugep-tooltip right-12">Perspectiva 3D/2D</div>
+          </div>
 
           {/* Resetar Norte */}
-          <button
-            onClick={() => setViewState(prev => ({ ...prev, bearing: 0 }))}
-            className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 opacity-70 hover:opacity-100 transition-all duration-300 hover:scale-110"
-            title="Resetar Norte"
-            style={{ transform: `rotate(${-viewState.bearing}deg)` }}
-          >
-            <Compass size={16} className="text-rose-400" />
-          </button>
+          <div className="relative group flex items-center">
+            <button
+              onClick={() => setViewState(prev => ({ ...prev, bearing: 0 }))}
+              className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 opacity-70 hover:opacity-100 transition-all duration-300 hover:scale-110"
+              title="Resetar Norte"
+              style={{ transform: `rotate(${-viewState.bearing}deg)` }}
+            >
+              <Compass size={16} className="text-rose-400" />
+            </button>
+            <div className="hidden md:block nugep-tooltip right-12">Resetar Norte</div>
+          </div>
         </div>
       </div>
 
@@ -1136,19 +1506,28 @@ export default function HoloMapPlatform() {
       {activeTool === 'polygon' && (
         <div 
           style={uiZoomStyle}
-          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-3xl p-3 sm:p-4 border border-[#F4B205]/50 shadow-2xl flex flex-col md:flex-row items-center gap-3 sm:gap-4 animate-in slide-in-from-bottom-4 duration-300 pointer-events-auto max-w-[95vw] md:max-w-[92vw]"
+          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-3xl p-3 sm:p-4 border border-[#F4B205]/60 shadow-[0_16px_50px_rgba(0,0,0,0.6)] flex flex-col md:flex-row items-center gap-3 sm:gap-4 anim-slide-up-spring pointer-events-auto max-w-[95vw] md:max-w-[92vw] backdrop-blur-2xl"
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#0F3E8C]/30 border border-[#F4B205]/60 flex items-center justify-center text-[#F4B205]">
+            <div className="w-10 h-10 rounded-2xl bg-[#0F3E8C]/40 border border-[#F4B205]/60 flex items-center justify-center text-[#F4B205] shadow-[0_0_15px_rgba(244,178,5,0.25)] shrink-0">
               <Hexagon size={20} strokeWidth={2.5} />
             </div>
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-amber-400">Demarcando Território</p>
-              <p className="text-xs opacity-80">
-                Vértices: <span className="font-bold text-white">{polygonDraft.length}</span> | 
-                Área: <span className="font-bold text-amber-300">{(currentDraftArea / 10000).toFixed(2)} ha</span> ({((currentDraftArea / 1000000).toFixed(3))} km²) | 
-                Perímetro: <span className="font-bold text-white">{currentDraftPerimeter.toFixed(2)} km</span>
-              </p>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shadow-[0_0_8px_rgba(244,178,5,0.8)]" />
+                <p className="text-xs font-bold uppercase tracking-wider text-amber-400">Demarcando Território</p>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] opacity-80 mt-0.5">
+                <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10">
+                  Vértices: <strong className="text-white">{polygonDraft.length}</strong>
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10">
+                  Área: <strong className="text-amber-300">{(currentDraftArea / 10000).toFixed(2)} ha</strong>
+                </span>
+                <span className="hidden sm:inline px-2 py-0.5 rounded-md bg-white/5 border border-white/10">
+                  Perímetro: <strong className="text-white">{currentDraftPerimeter.toFixed(2)} km</strong>
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1158,17 +1537,17 @@ export default function HoloMapPlatform() {
               value={draftTerritoryName}
               onChange={e => setDraftTerritoryName(e.target.value)}
               placeholder="Nome do Território"
-              className="bg-white/10 px-3 py-2 rounded-xl text-xs border border-white/20 outline-none w-36 font-semibold"
+              className="bg-white/10 px-3 py-2 rounded-xl text-xs border border-white/20 outline-none w-36 font-semibold focus:border-[#F4B205] focus:bg-black/30 transition-all text-white"
             />
             {/* Paleta Rápida NUGEP */}
-            <div className="flex items-center gap-1 px-1.5 py-1 rounded-xl bg-black/20 border border-white/10">
+            <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-black/30 border border-white/10">
               {NUGEP_COLOR_PRESETS.map(preset => (
                 <button
                   key={preset.hex}
                   type="button"
                   onClick={() => setDraftTerritoryColor(preset.hex)}
-                  className={`w-5 h-5 rounded-full transition-transform hover:scale-125 border ${
-                    draftTerritoryColor === preset.hex ? 'ring-2 ring-white scale-110 border-white' : 'border-black/30'
+                  className={`w-5 h-5 rounded-full transition-all duration-200 hover:scale-125 border ${
+                    draftTerritoryColor === preset.hex ? 'ring-2 ring-white scale-110 border-white shadow-[0_0_8px_rgba(255,255,255,0.6)]' : 'border-black/30 opacity-80 hover:opacity-100'
                   }`}
                   style={{ backgroundColor: preset.hex }}
                   title={preset.name}
@@ -1185,7 +1564,7 @@ export default function HoloMapPlatform() {
             {polygonDraft.length > 0 && (
               <button
                 onClick={() => setPolygonDraft(prev => prev.slice(0, -1))}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 text-xs"
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 text-xs transition-all duration-200 hover:scale-105 active:scale-95"
                 title="Desfazer vértice"
               >
                 <Undo2 size={16} />
@@ -1194,7 +1573,7 @@ export default function HoloMapPlatform() {
             <button
               onClick={finishPolygonDemarcation}
               disabled={polygonDraft.length < 3}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md flex items-center gap-1.5"
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 shadow-[0_0_15px_rgba(16,185,129,0.35)] flex items-center gap-1.5 active:scale-95 hover-lift"
             >
               <Check size={14} />
               <span>Concluir</span>
@@ -1204,7 +1583,7 @@ export default function HoloMapPlatform() {
                 setPolygonDraft([]);
                 setActiveTool('navigate');
               }}
-              className="px-3 py-2 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-gray-300 transition-all"
+              className="px-3 py-2 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-gray-300 transition-all duration-200 active:scale-95"
             >
               Cancelar
             </button>
@@ -1212,24 +1591,29 @@ export default function HoloMapPlatform() {
         </div>
       )}
 
-      {/* Régua de Medição */}
+      {/* Régua de Medição Linear */}
       {activeTool === 'measure' && measurementPoints.length > 0 && (
         <div 
           style={uiZoomStyle}
-          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-2xl px-4 sm:px-5 py-2.5 sm:py-3 border border-white/20 shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4 pointer-events-auto"
+          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-3xl px-5 py-3 border border-[#F4B205]/40 shadow-[0_16px_50px_rgba(0,0,0,0.6)] flex items-center gap-4 anim-slide-up-spring pointer-events-auto backdrop-blur-2xl"
         >
-          <div>
-            <p className="text-[10px] uppercase tracking-widest opacity-60 font-bold">Distância Linear</p>
-            <p className="text-xl font-light text-amber-400">
-              {currentDistance < 1 
-                ? `${(currentDistance * 1000).toFixed(0)} m` 
-                : `${currentDistance.toFixed(2)} km`}
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-[#0F3E8C]/30 border border-[#F4B205]/40 flex items-center justify-center text-[#F4B205]">
+              <Ruler size={16} />
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-widest text-[#F4B205] font-bold">Distância Linear</p>
+              <p className="text-lg font-bold text-white tracking-wide">
+                {currentDistance < 1 
+                  ? `${(currentDistance * 1000).toFixed(0)} m` 
+                  : `${currentDistance.toFixed(2)} km`}
+              </p>
+            </div>
           </div>
           <button
             onClick={() => setMeasurementPoints([])}
-            className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300"
-            title="Limpar rota"
+            className="p-2 rounded-xl bg-white/10 hover:bg-red-500/20 text-gray-300 hover:text-red-400 transition-all duration-200 hover:scale-105 active:scale-95"
+            title="Limpar medição"
           >
             <Trash2 size={16} />
           </button>
