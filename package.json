@@ -19,9 +19,11 @@
     "react-map-gl": "^7.1.7",
     "tailwind-merge": "^2.3.0",
     "clsx": "^2.1.1",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^1.1.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
+
     "@types/node": "^20",
     "@types/papaparse": "^5.3.14",
     "@types/react": "^18",

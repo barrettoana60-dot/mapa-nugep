@@ -120,12 +120,66 @@ function calculatePolygonArea(coords: [number, number][]): number {
 
 // Conversor de coordenada numérica
 function parseCoord(val: any): number {
-  if (val === null || val === undefined) return 0;
-  if (typeof val === 'number') return isNaN(val) ? 0 : val;
-  const str = String(val).trim().replace(',', '.');
-  const parsed = parseFloat(str);
-  return isNaN(parsed) ? 0 : parsed;
+  if (val === null || val === undefined) return NaN;
+  if (typeof val === 'number') return isNaN(val) ? NaN : val;
+  let str = String(val)
+    .trim()
+    .replace(/\u00a0/g, ' ')    // non-breaking space
+    .replace(/^\uFEFF/, '')      // BOM
+    .replace(/\u2212/g, '-');   // unicode minus → ASCII minus
+
+  // Remove texto de prefixo ("Lat:", "Long:", "Coord:", etc.)
+  str = str.replace(/^[a-zA-Z\u00C0-\u024F .:()\-_]+:/i, '').trim();
+
+  // Parênteses negativos ex: (9.17)S ou (9.17) → negativo
+  const parenNeg = str.match(/^\(([0-9.,]+)\)\s*([SsWwOo])?$/);
+  if (parenNeg) {
+    const num = parseFloat(parenNeg[1].replace(',', '.'));
+    return isNaN(num) ? NaN : -Math.abs(num);
+  }
+
+  // Formato DMS: 9°10'30"S ou 9° 10' 30.5" S ou 9 10 30 S
+  const dms = str.match(
+    /^(-?\d{1,3})[°º\s]+(\d{1,2})['\u2032\s]+([0-9.]+)["\u2033\s]*([NSEWSOosweEW]?)$/i
+  );
+  if (dms) {
+    const deg = parseFloat(dms[1]);
+    const min = parseFloat(dms[2]);
+    const sec = parseFloat(dms[3]);
+    const hem = dms[4].toUpperCase();
+    let dd = Math.abs(deg) + min / 60 + sec / 3600;
+    if (hem === 'S' || hem === 'O' || hem === 'W') dd = -dd;
+    else if (deg < 0) dd = -dd;
+    return dd;
+  }
+
+  // Formato DM: 9°10.5'S
+  const dm = str.match(/^(-?\d{1,3})[°º\s]+([0-9.]+)['\u2032\s]*([NSEWSOosweEW]?)$/i);
+  if (dm) {
+    const deg = parseFloat(dm[1]);
+    const min = parseFloat(dm[2].replace(',', '.'));
+    const hem = dm[3].toUpperCase();
+    let dd = Math.abs(deg) + min / 60;
+    if (hem === 'S' || hem === 'O' || hem === 'W') dd = -dd;
+    else if (deg < 0) dd = -dd;
+    return dd;
+  }
+
+  // Hemisfério no final: "9.17S" → -9.17
+  const hemSuffix = str.match(/^(-?[0-9]+[.,][0-9]+)\s*([NSEWSOosweEW])$/i);
+  if (hemSuffix) {
+    const num = parseFloat(hemSuffix[1].replace(',', '.'));
+    const hem = hemSuffix[2].toUpperCase();
+    if (isNaN(num)) return NaN;
+    return (hem === 'S' || hem === 'O' || hem === 'W') ? -Math.abs(num) : Math.abs(num);
+  }
+
+  // Decimal normal — substitui vírgula por ponto e extrai o número
+  const cleaned = str.replace(',', '.').replace(/[^0-9.\-+]/g, '');
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? NaN : parsed;
 }
+
 
 export default function HoloMapPlatform() {
   const mapRef = useRef<MapRef>(null);
@@ -182,6 +236,8 @@ export default function HoloMapPlatform() {
   const [lngColumn, setLngColumn] = useState('');
   const [titleColumn, setTitleColumn] = useState('');
   const [categoryColumn, setCategoryColumn] = useState('');
+  const [sheetAnnotation, setSheetAnnotation] = useState('');
+  const [descColumn, setDescColumn] = useState('');
 
   // Toast e Processamento
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -705,58 +761,135 @@ export default function HoloMapPlatform() {
     }, 400);
   };
 
-  // Importar Planilha
+  // Importar Planilha (CSV, TSV, TXT, XLSX, XLS)
   const handleSpreadsheetUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsProcessing(true);
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        setIsProcessing(false);
-        if (!results.data || results.data.length === 0) {
-          showToast('Planilha vazia.', 'error');
-          return;
+    setSheetAnnotation('');
+    setDescColumn('');
+
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    const isExcel = ext === 'xlsx' || ext === 'xls';
+
+    // Helper: detectar colunas automaticamente com aliases ampliados
+    const autoDetectColumns = (headers: string[]) => {
+      const lowerHeaders = headers.map(h => ({
+        orig: h,
+        clean: h.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9_]/g, ' ').trim()
+      }));
+
+      const LAT_ALIASES = [
+        'latitude', 'lat', 'lat dd', 'lat grau', 'lat graus', 'lat decimal', 'lat (dd)',
+        'latitude (dd)', 'latitude (graus)', 'latitude dd', 'latitudine', 'lat_dd', 'lat_grau',
+        'coord y', 'coordenada y', 'y', 'y coord', 'y (m)', 'y utm', 'northing',
+        'latitude geografica', 'lat geo', 'latitude wgs84'
+      ];
+      const LNG_ALIASES = [
+        'longitude', 'long', 'lng', 'lon', 'lon dd', 'lng dd', 'lon grau', 'long decimal',
+        'lon (dd)', 'longitude (dd)', 'longitude (graus)', 'longitude dd', 'long_dd',
+        'coord x', 'coordenada x', 'x', 'x coord', 'x (m)', 'x utm', 'easting',
+        'longitude geografica', 'lon geo', 'longitude wgs84', 'longitudine'
+      ];
+      const TITLE_ALIASES = [
+        'nome', 'name', 'titulo', 'title', 'local', 'localizacao', 'lugar', 'descricao breve',
+        'objeto', 'patrimonio', 'bem', 'denominacao', 'edificacao', 'sitio', 'localidade',
+        'nome do local', 'nome do sitio', 'identificacao', 'label', 'rotulo', 'descricao curta'
+      ];
+      const CAT_ALIASES = [
+        'categoria', 'tipo', 'type', 'class', 'classificacao', 'natureza', 'especie',
+        'modalidade', 'grupo', 'setor', 'area', 'uso', 'funcao', 'finalidade'
+      ];
+      const DESC_ALIASES = [
+        'descricao', 'description', 'observacao', 'observacoes', 'obs', 'nota', 'notas',
+        'informacao', 'detalhes', 'historico', 'contexto', 'texto', 'comentario', 'info'
+      ];
+
+      const findCol = (aliases: string[]) =>
+        lowerHeaders.find(h => aliases.some(a => h.clean === a || h.clean.includes(a)));
+
+      const foundLat = findCol(LAT_ALIASES);
+      const foundLng = findCol(LNG_ALIASES);
+      const foundTitle = findCol(TITLE_ALIASES);
+      const foundCat = findCol(CAT_ALIASES);
+      const foundDesc = findCol(DESC_ALIASES);
+
+      if (foundLat) setLatColumn(foundLat.orig);
+      else if (headers.length > 0) setLatColumn(headers[0]);
+
+      if (foundLng) setLngColumn(foundLng.orig);
+      else if (headers.length > 1) setLngColumn(headers[1]);
+
+      if (foundTitle) setTitleColumn(foundTitle.orig);
+      if (foundCat) setCategoryColumn(foundCat.orig);
+      if (foundDesc) setDescColumn(foundDesc.orig);
+    };
+
+    if (isExcel) {
+      // Ler .xlsx via SheetJS (importado dinamicamente para não bloquear bundle)
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        try {
+          const XLSX = await import('xlsx');
+          const data = new Uint8Array(ev.target!.result as ArrayBuffer);
+          const wb = XLSX.read(data, { type: 'array', cellDates: true });
+          const wsName = wb.SheetNames[0];
+          const ws = wb.Sheets[wsName];
+          const rawRows: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, {
+            raw: false,
+            defval: ''
+          });
+
+          if (!rawRows || rawRows.length === 0) {
+            setIsProcessing(false);
+            showToast('Planilha Excel vazia ou sem dados.', 'error');
+            return;
+          }
+
+          const headers = Object.keys(rawRows[0]);
+          setParsedSpreadsheet({ fileName: file.name, headers, rows: rawRows });
+          autoDetectColumns(headers);
+          setActiveModal('spreadsheet');
+          setIsProcessing(false);
+          showToast(`Excel carregado: ${rawRows.length} registros encontrados.`);
+        } catch (err) {
+          setIsProcessing(false);
+          showToast('Erro ao ler arquivo Excel. Verifique se o arquivo não está corrompido.', 'error');
         }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      // CSV / TSV / TXT via PapaParse
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        dynamicTyping: false,
+        complete: (results) => {
+          setIsProcessing(false);
+          if (!results.data || results.data.length === 0) {
+            showToast('Planilha vazia.', 'error');
+            return;
+          }
 
-        const headers = results.meta.fields || Object.keys(results.data[0] || {});
-        const rows = results.data as Record<string, any>[];
+          const headers = results.meta.fields || Object.keys(results.data[0] || {});
+          const rows = results.data as Record<string, any>[];
 
-        setParsedSpreadsheet({ fileName: file.name, headers, rows });
-
-        // Detecção de colunas
-        const lowerHeaders = headers.map(h => ({
-          orig: h,
-          clean: h.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
-        }));
-
-        const foundLat = lowerHeaders.find(h => ['latitude', 'lat', 'lat_dd', 'y'].includes(h.clean));
-        const foundLng = lowerHeaders.find(h => ['longitude', 'long', 'lng', 'lon', 'x'].includes(h.clean));
-        const foundTitle = lowerHeaders.find(h => ['nome', 'titulo', 'local', 'name', 'title'].includes(h.clean));
-        const foundCat = lowerHeaders.find(h => ['categoria', 'tipo', 'type'].includes(h.clean));
-
-        if (foundLat) setLatColumn(foundLat.orig);
-        else if (headers.length > 0) setLatColumn(headers[0]);
-
-        if (foundLng) setLngColumn(foundLng.orig);
-        else if (headers.length > 1) setLngColumn(headers[1]);
-
-        if (foundTitle) setTitleColumn(foundTitle.orig);
-        if (foundCat) setCategoryColumn(foundCat.orig);
-
-        setActiveModal('spreadsheet');
-        showToast(`Planilha carregada: ${rows.length} registros prontos.`);
-      },
-      error: () => {
-        setIsProcessing(false);
-        showToast('Falha ao processar planilha.', 'error');
-      }
-    });
+          setParsedSpreadsheet({ fileName: file.name, headers, rows });
+          autoDetectColumns(headers);
+          setActiveModal('spreadsheet');
+          showToast(`Planilha carregada: ${rows.length} registros prontos.`);
+        },
+        error: () => {
+          setIsProcessing(false);
+          showToast('Falha ao processar planilha.', 'error');
+        }
+      });
+    }
 
     e.target.value = '';
   };
+
 
   // Aplicar Planilha como Território ou Pontos
   const applySpreadsheet = (asTerritory: boolean = true) => {
@@ -773,8 +906,10 @@ export default function HoloMapPlatform() {
       const lng = parseCoord(row[lngColumn]);
       const title = titleColumn && row[titleColumn] ? String(row[titleColumn]) : `Ponto #${idx + 1}`;
       const category = categoryColumn && row[categoryColumn] ? String(row[categoryColumn]) : 'Importado';
+      const desc = descColumn && row[descColumn] ? String(row[descColumn]) : '';
 
-      if (lat !== 0 && lng !== 0 && !isNaN(lat) && !isNaN(lng)) {
+      // Coordenada válida: não-NaN e dentro dos limites geográficos (-90<lat<90, -180<lng<180)
+      if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
         mappedPoints.push({
           id: `sheet_${Date.now()}_${idx}`,
           autor: parsedSpreadsheet.fileName,
@@ -785,18 +920,22 @@ export default function HoloMapPlatform() {
           longitude: lng,
           altura: 0,
           datasetName: parsedSpreadsheet.fileName,
-          extraProps: row
+          extraProps: { ...row, _descricao: desc }
         });
         validCoords.push([lng, lat]);
       }
     });
 
     if (mappedPoints.length === 0) {
-      showToast('Nenhuma coordenada válida encontrada.', 'error');
+      showToast('Nenhuma coordenada válida encontrada. Verifique as colunas de Latitude e Longitude.', 'error');
       return;
     }
 
     setObjetos(prev => [...mappedPoints, ...prev]);
+
+    const baseDesc = sheetAnnotation
+      ? `${sheetAnnotation}\n\nFonte: ${parsedSpreadsheet.fileName} (${validCoords.length} pontos).`
+      : `Importado de: ${parsedSpreadsheet.fileName} (${validCoords.length} pontos).`;
 
     if (asTerritory && validCoords.length >= 3) {
       const areaM2 = calculatePolygonArea(validCoords);
@@ -804,8 +943,8 @@ export default function HoloMapPlatform() {
       const newTerritory: DemarcatedTerritory = {
         id: `terr_sheet_${Date.now()}`,
         nome: `Território: ${parsedSpreadsheet.fileName.replace(/\.[^/.]+$/, '')}`,
-        descricao: `Planilha ${parsedSpreadsheet.fileName} (${validCoords.length} pontos).`,
-        cor: '#10B981',
+        descricao: baseDesc,
+        cor: '#0F3E8C',
         pontos: validCoords,
         areaM2: Math.round(areaM2),
         areaHectares: parseFloat((areaM2 / 10000).toFixed(2)),
@@ -816,7 +955,11 @@ export default function HoloMapPlatform() {
       };
       setDemarcatedTerritories(prev => [newTerritory, ...prev]);
       setActiveTerritory(newTerritory);
-      showToast(`Território demarcado: ${newTerritory.areaHectares} ha!`);
+      showToast(`✅ ${mappedPoints.length} pontos demarcados como território — ${newTerritory.areaHectares} ha`);
+    } else if (!asTerritory) {
+      showToast(`✅ ${mappedPoints.length} pontos demarcados no mapa!`);
+    } else {
+      showToast(`✅ ${mappedPoints.length} pontos adicionados (mínimo 3 pontos para formar território).`);
     }
 
     const first = mappedPoints[0];
@@ -824,12 +967,64 @@ export default function HoloMapPlatform() {
       ...prev,
       latitude: first.latitude,
       longitude: first.longitude,
-      zoom: 14,
+      zoom: 13,
       pitch: 55
     }));
 
     setActiveModal(null);
   };
+
+  // Exportar planilha importada como Excel (.xlsx)
+  const exportSpreadsheetAsExcel = async () => {
+    if (!parsedSpreadsheet) return;
+    try {
+      const XLSX = await import('xlsx');
+
+      // Aba 1: Pontos com status de validade
+      const pontoRows = parsedSpreadsheet.rows.map((row, idx) => {
+        const lat = parseCoord(row[latColumn]);
+        const lng = parseCoord(row[lngColumn]);
+        const valid = !isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+        return {
+          '#': idx + 1,
+          'Status': valid ? '✅ Válida' : '❌ Inválida',
+          'Latitude (DD)': valid ? lat.toFixed(7) : '',
+          'Longitude (DD)': valid ? lng.toFixed(7) : '',
+          ...row
+        };
+      });
+
+      // Aba 2: Resumo
+      const validCount = pontoRows.filter(r => r['Status'].startsWith('✅')).length;
+      const resumoRows = [
+        { 'Campo': 'Arquivo', 'Valor': parsedSpreadsheet.fileName },
+        { 'Campo': 'Data de Importação', 'Valor': new Date().toLocaleString('pt-BR') },
+        { 'Campo': 'Total de Registros', 'Valor': parsedSpreadsheet.rows.length },
+        { 'Campo': 'Coordenadas Válidas', 'Valor': validCount },
+        { 'Campo': 'Coordenadas Inválidas', 'Valor': parsedSpreadsheet.rows.length - validCount },
+        { 'Campo': 'Coluna Latitude', 'Valor': latColumn },
+        { 'Campo': 'Coluna Longitude', 'Valor': lngColumn },
+        { 'Campo': 'Coluna Título', 'Valor': titleColumn || '—' },
+        { 'Campo': 'Coluna Categoria', 'Valor': categoryColumn || '—' },
+        { 'Campo': 'Coluna Descrição', 'Valor': descColumn || '—' },
+        { 'Campo': 'Anotação do Usuário', 'Valor': sheetAnnotation || '—' },
+      ];
+
+      const wb = XLSX.utils.book_new();
+      const wsPontos = XLSX.utils.json_to_sheet(pontoRows);
+      const wsResumo = XLSX.utils.json_to_sheet(resumoRows);
+
+      XLSX.utils.book_append_sheet(wb, wsPontos, 'Pontos');
+      XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo');
+
+      const fileName = parsedSpreadsheet.fileName.replace(/\.[^/.]+$/, '') + '_nugep_export.xlsx';
+      XLSX.writeFile(wb, fileName);
+      showToast('Excel exportado com sucesso!');
+    } catch (err) {
+      showToast('Erro ao exportar Excel.', 'error');
+    }
+  };
+
 
   // Centralizar no Território NUGEP
   const flyToPreset = (preset: 'nugep') => {
@@ -970,8 +1165,7 @@ export default function HoloMapPlatform() {
         <div className={`pointer-events-auto relative search-container-wrap ${
           isSearchFocused ? 'flex-1 max-w-[620px]' : 'flex-1 max-w-[340px] sm:max-w-[440px]'
         }`}>
-          {/* Halo Beam luminoso ao redor da barra quando ativa */}
-          {isSearchFocused && <div className="search-glow-halo" />}
+
 
           <form 
             onSubmit={handleSearchSubmit}
@@ -983,7 +1177,7 @@ export default function HoloMapPlatform() {
             <button 
               type="submit" 
               className={`pl-2 sm:pl-3 text-[#F4B205] transition-all duration-300 cursor-pointer focus:outline-none shrink-0 ${
-                isSearchFocused ? 'search-icon-active scale-115' : 'hover:scale-125 active:scale-90'
+                isSearchFocused ? 'scale-110' : 'hover:scale-125 active:scale-90'
               }`}
               title="Buscar no mapa (Enter)"
             >
@@ -1437,7 +1631,7 @@ export default function HoloMapPlatform() {
             <div className="hidden md:block nugep-tooltip right-12">Demarcar Território</div>
           </div>
 
-          <div className="w-full h-[1px] bg-white/10 my-0.5 divider-shimmer" />
+          <div className="w-full h-[1px] bg-white/10 my-0.5" />
 
           {/* Alternar Visão 3D / 2D */}
           <div className="relative group flex items-center">
@@ -1924,7 +2118,7 @@ export default function HoloMapPlatform() {
             </div>
           </div>
 
-          <div className="pt-3 border-t border-white/10 divider-shimmer shrink-0 space-y-2">
+          <div className="pt-3 border-t border-white/10 shrink-0 space-y-2">
             <div className="flex gap-2">
               <button
                 onClick={handleSaveActiveTerritory}
@@ -2053,7 +2247,7 @@ export default function HoloMapPlatform() {
             </div>
           </div>
 
-          <div className="pt-3 border-t border-white/10 divider-shimmer shrink-0 space-y-2">
+          <div className="pt-3 border-t border-white/10 shrink-0 space-y-2">
             <div className="flex gap-2">
               <button
                 onClick={handleSaveActivePoint}
@@ -2553,17 +2747,23 @@ export default function HoloMapPlatform() {
         <div className="absolute inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 sm:p-8 modal-backdrop-enter">
           <div 
             style={uiZoomStyle}
-            className="ui-scale-target liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-4xl max-h-[90vh] border border-white/20 shadow-2xl flex flex-col overflow-hidden modal-content-enter"
+            className="ui-scale-target liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-5xl max-h-[90vh] border border-white/20 shadow-2xl flex flex-col overflow-hidden modal-content-enter"
           >
+            {/* Cabeçalho */}
             <div className="flex items-center justify-between pb-4 border-b border-white/10 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <div className="p-2.5 rounded-2xl bg-[#0F3E8C]/30 text-[#F4B205] border border-[#F4B205]/30">
                   <FileSpreadsheet size={22} />
                 </div>
                 <div>
                   <h3 className="font-bold text-base sm:text-lg">{parsedSpreadsheet.fileName}</h3>
                   <p className="text-xs opacity-60">
-                    {parsedSpreadsheet.rows.length} registros | Mapeamento de Coordenadas
+                    {parsedSpreadsheet.rows.length} registros ·{' '}
+                    {parsedSpreadsheet.rows.filter(r => {
+                      const lt = parseCoord(r[latColumn]);
+                      const ln = parseCoord(r[lngColumn]);
+                      return !isNaN(lt) && !isNaN(ln) && Math.abs(lt) <= 90 && Math.abs(ln) <= 180;
+                    }).length} coordenadas válidas
                   </p>
                 </div>
               </div>
@@ -2572,13 +2772,14 @@ export default function HoloMapPlatform() {
               </button>
             </div>
 
-            <div className="py-4 grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0 border-b border-white/10">
+            {/* Mapeamento de Colunas */}
+            <div className="py-4 grid grid-cols-2 sm:grid-cols-3 gap-3 shrink-0 border-b border-white/10">
               <div>
                 <label className="text-[10px] uppercase font-bold tracking-wider text-amber-400 block mb-1">Latitude *</label>
                 <select
                   value={latColumn}
                   onChange={e => setLatColumn(e.target.value)}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-xs outline-none focus:border-[#F4B205]"
+                  className="w-full bg-white/10 border border-amber-400/40 rounded-xl px-3 py-2 text-xs outline-none focus:border-[#F4B205]"
                 >
                   {parsedSpreadsheet.headers.map(h => (
                     <option key={h} value={h} className="bg-gray-900 text-white">{h}</option>
@@ -2591,7 +2792,7 @@ export default function HoloMapPlatform() {
                 <select
                   value={lngColumn}
                   onChange={e => setLngColumn(e.target.value)}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-xs outline-none focus:border-[#F4B205]"
+                  className="w-full bg-white/10 border border-amber-400/40 rounded-xl px-3 py-2 text-xs outline-none focus:border-[#F4B205]"
                 >
                   {parsedSpreadsheet.headers.map(h => (
                     <option key={h} value={h} className="bg-gray-900 text-white">{h}</option>
@@ -2606,7 +2807,7 @@ export default function HoloMapPlatform() {
                   onChange={e => setTitleColumn(e.target.value)}
                   className="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-xs outline-none"
                 >
-                  <option value="">Nenhum</option>
+                  <option value="">— Nenhum —</option>
                   {parsedSpreadsheet.headers.map(h => (
                     <option key={h} value={h} className="bg-gray-900 text-white">{h}</option>
                   ))}
@@ -2614,50 +2815,76 @@ export default function HoloMapPlatform() {
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold tracking-wider opacity-60 block mb-1">Categoria</label>
+                <label className="text-[10px] uppercase font-bold tracking-wider opacity-60 block mb-1">Categoria / Tipo</label>
                 <select
                   value={categoryColumn}
                   onChange={e => setCategoryColumn(e.target.value)}
                   className="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-xs outline-none"
                 >
-                  <option value="">Nenhum</option>
+                  <option value="">— Nenhum —</option>
                   {parsedSpreadsheet.headers.map(h => (
                     <option key={h} value={h} className="bg-gray-900 text-white">{h}</option>
                   ))}
                 </select>
               </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold tracking-wider opacity-60 block mb-1">Descrição / Observação</label>
+                <select
+                  value={descColumn}
+                  onChange={e => setDescColumn(e.target.value)}
+                  className="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-xs outline-none"
+                >
+                  <option value="">— Nenhum —</option>
+                  {parsedSpreadsheet.headers.map(h => (
+                    <option key={h} value={h} className="bg-gray-900 text-white">{h}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#F4B205] block mb-1">Anotação Geral</label>
+                <textarea
+                  value={sheetAnnotation}
+                  onChange={e => setSheetAnnotation(e.target.value)}
+                  placeholder="Adicione uma observação sobre este conjunto de dados..."
+                  rows={2}
+                  className="w-full bg-white/10 border border-[#F4B205]/30 rounded-xl px-3 py-2 text-xs outline-none focus:border-[#F4B205] resize-none placeholder-white/30"
+                />
+              </div>
             </div>
 
+            {/* Tabela de prévia */}
             <div className="flex-1 overflow-auto custom-scrollbar my-4 rounded-2xl border border-white/10 bg-black/20">
               <table className="w-full text-left border-collapse text-xs">
                 <thead className="sticky top-0 bg-black/80 backdrop-blur-md border-b border-white/10 z-10">
                   <tr>
-                    <th className="p-3 font-bold opacity-60">Status</th>
+                    <th className="p-3 font-bold opacity-60 whitespace-nowrap">Coordenadas</th>
                     {parsedSpreadsheet.headers.map(h => (
                       <th key={h} className="p-3 font-bold whitespace-nowrap opacity-80">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {parsedSpreadsheet.rows.slice(0, 25).map((row, rIdx) => {
+                  {parsedSpreadsheet.rows.slice(0, 50).map((row, rIdx) => {
                     const lat = parseCoord(row[latColumn]);
                     const lng = parseCoord(row[lngColumn]);
-                    const isValid = lat !== 0 && lng !== 0 && !isNaN(lat) && !isNaN(lng);
+                    const isValid = !isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
 
                     return (
-                      <tr key={rIdx} className="hover:bg-white/5">
-                        <td className="p-3">
+                      <tr key={rIdx} className={`hover:bg-white/5 ${isValid ? '' : 'opacity-40'}`}>
+                        <td className="p-3 whitespace-nowrap">
                           {isValid ? (
                             <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full font-mono">
-                              {lat.toFixed(4)}, {lng.toFixed(4)}
+                              {lat.toFixed(5)}, {lng.toFixed(5)}
                             </span>
                           ) : (
                             <span className="text-[10px] text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">Inválida</span>
                           )}
                         </td>
                         {parsedSpreadsheet.headers.map(h => (
-                          <td key={h} className="p-3 truncate max-w-[180px] opacity-70">
-                            {String(row[h] || '-')}
+                          <td key={h} className="p-3 truncate max-w-[160px] opacity-70">
+                            {String(row[h] ?? '—')}
                           </td>
                         ))}
                       </tr>
@@ -2665,24 +2892,35 @@ export default function HoloMapPlatform() {
                   })}
                 </tbody>
               </table>
+              {parsedSpreadsheet.rows.length > 50 && (
+                <p className="text-center text-xs opacity-40 py-3">
+                  Mostrando 50 de {parsedSpreadsheet.rows.length} registros. Todos serão importados.
+                </p>
+              )}
             </div>
 
-            <div className="pt-3 border-t border-white/10 shrink-0 flex items-center justify-between gap-3">
-              <span className="text-xs opacity-60">
-                Demarque os pontos ou feche a área em um território único.
-              </span>
-              <div className="flex items-center gap-2">
+            {/* Rodapé com ações */}
+            <div className="pt-3 border-t border-white/10 shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <button
+                onClick={exportSpreadsheetAsExcel}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border border-[#F4B205]/40 text-[#F4B205] hover:bg-[#F4B205]/10 transition-all"
+              >
+                <FileSpreadsheet size={14} />
+                Exportar Excel
+              </button>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
                 <button
                   onClick={() => applySpreadsheet(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold liquid-glass border border-white/20 hover:bg-white/10 text-white"
+                  className="px-4 py-2 rounded-xl text-xs font-bold liquid-glass border border-white/20 hover:bg-white/10 text-white flex items-center gap-1.5"
                 >
+                  <MapPin size={14} />
                   Demarcar Pontos
                 </button>
                 <button
                   onClick={() => applySpreadsheet(true)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-[#0F3E8C] hover:bg-[#1E4DB7] text-white flex items-center gap-1.5 border border-[#F4B205]/30"
                 >
-                  <Hexagon size={14} />
+                  <Hexagon size={14} className="text-[#F4B205]" />
                   <span>Demarcar como Território</span>
                 </button>
               </div>

@@ -259,23 +259,11 @@ body {
   animation: nugep-search-click 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* search-icon-active e search-glow-halo desativados — animações de cor removidas */
 .search-icon-active {
-  animation: nugep-icon-glow 2s ease-in-out infinite;
   color: #F4B205 !important;
 }
 
-/* Traveling light beam ao redor da barra quando ativa */
-.search-glow-halo {
-  position: absolute;
-  inset: -1.5px;
-  border-radius: 1.15rem;
-  background: linear-gradient(90deg, #0F3E8C, #F4B205, #F57602, #0E8953, #0F3E8C);
-  background-size: 300% 300%;
-  animation: nugep-border-beam 4s ease infinite;
-  z-index: -1;
-  opacity: 0.85;
-  filter: blur(0.5px);
-}
 
 /* Tooltips modernas para ferramentas */
 .nugep-tooltip {
@@ -370,20 +358,11 @@ body {
   animation: nugep-stagger-in 0.2s ease-out both;
 }
 
-/* Separador com shimmer */
+/* divider-shimmer — animação de shimmer removida */
 .divider-shimmer {
   position: relative;
-  overflow: hidden;
 }
 
-.divider-shimmer::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(244, 178, 5, 0.2), transparent);
-  background-size: 200% 100%;
-  animation: nugep-shimmer 4s linear infinite;
-}
 
 /* Escalas de Interface */
 :root {
