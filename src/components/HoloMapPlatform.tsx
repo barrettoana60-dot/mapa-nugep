@@ -846,7 +846,7 @@ export default function HoloMapPlatform() {
       <div className="no-print w-full h-full relative overflow-hidden flex flex-col">
         {/* Toast Notification */}
       {toast && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[200] px-5 py-3 rounded-2xl liquid-glass flex items-center gap-3 animate-in fade-in slide-in-from-top-3 duration-300 shadow-2xl border border-white/20">
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[200] px-5 py-3 rounded-2xl liquid-glass flex items-center gap-3 anim-slide-up-spring shadow-2xl border border-white/20 anim-glow-pulse">
           {toast.type === 'success' && <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />}
           {toast.type === 'error' && <AlertCircle size={18} className="text-red-400 shrink-0" />}
           {toast.type === 'info' && <img src={NUGEP_LOGO} alt="NUGEP" className="w-5 h-5 object-contain shrink-0" />}
@@ -859,20 +859,20 @@ export default function HoloMapPlatform() {
           ========================================================================= */}
       <div 
         style={uiZoomStyle}
-        className="ui-scale-target absolute top-2 sm:top-4 inset-x-2 sm:inset-x-4 z-30 flex items-center justify-between gap-2 sm:gap-4 pointer-events-none origin-top"
+        className="ui-scale-target absolute top-2 sm:top-4 inset-x-2 sm:inset-x-4 z-30 flex items-center justify-between gap-2 sm:gap-4 pointer-events-none origin-top anim-fade-blur"
       >
         {/* BRANDING: NUGEP MAPS + LOGO OFICIAL DO NUGEP */}
         <div 
           onClick={() => flyToPreset('nugep')}
-          className="liquid-glass rounded-2xl px-3 sm:px-4 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3 border border-white/15 shadow-2xl cursor-pointer hover:bg-white/10 active:scale-95 transition-all pointer-events-auto shrink-0"
+          className="liquid-glass rounded-2xl px-3 sm:px-4 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3 border border-white/15 shadow-2xl cursor-pointer hover:bg-white/10 active:scale-95 transition-all duration-300 pointer-events-auto shrink-0 hover-lift group"
           title="Centralizar Território NUGEP"
         >
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-black/40 border border-[#F4B205]/40 flex items-center justify-center shadow-inner overflow-hidden p-0.5">
-            <img src={NUGEP_LOGO} alt="NUGEP MAPS" className="w-full h-full object-contain filter drop-shadow" />
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-black/40 border border-[#F4B205]/40 flex items-center justify-center shadow-inner overflow-hidden p-0.5 group-hover:border-[#F4B205]/70 transition-all duration-300">
+            <img src={NUGEP_LOGO} alt="NUGEP MAPS" className="w-full h-full object-contain filter drop-shadow group-hover:scale-110 transition-transform duration-300" />
           </div>
           <div className="flex items-center gap-1 font-bold tracking-widest text-xs sm:text-sm text-white">
             <span>NUGEP</span>
-            <span className="text-[#F4B205]">MAPS</span>
+            <span className="text-[#F4B205] group-hover:text-[#FBBF24] transition-colors duration-300">MAPS</span>
           </div>
         </div>
 
@@ -880,11 +880,11 @@ export default function HoloMapPlatform() {
         <div className="flex-1 max-w-[460px] pointer-events-auto relative">
           <form 
             onSubmit={handleSearchSubmit}
-            className="liquid-glass rounded-2xl p-1 sm:p-1.5 flex items-center gap-1.5 sm:gap-2 border border-white/20 shadow-2xl transition-all focus-within:border-[#F4B205]"
+            className="search-bar-modern liquid-glass rounded-2xl p-1 sm:p-1.5 flex items-center gap-1.5 sm:gap-2 border border-white/20 shadow-2xl"
           >
             <button 
               type="submit" 
-              className="pl-2 sm:pl-3 text-[#F4B205] hover:scale-110 active:scale-95 transition-transform cursor-pointer focus:outline-none shrink-0"
+              className="pl-2 sm:pl-3 text-[#F4B205] hover:scale-125 active:scale-90 transition-transform duration-300 cursor-pointer focus:outline-none shrink-0"
               title="Buscar no mapa (Enter)"
             >
               <Search size={15} />
@@ -898,7 +898,7 @@ export default function HoloMapPlatform() {
                 if (searchSuggestions.length > 0) setShowSearchDropdown(true);
               }}
               placeholder="Buscar endereço ou coordenadas (-9.17, -36.06)..."
-              className="w-full bg-transparent text-xs sm:text-sm outline-none placeholder:text-gray-400/60 font-medium"
+              className="w-full bg-transparent text-xs sm:text-sm outline-none placeholder:text-gray-400/60 font-medium transition-colors duration-300 focus:placeholder:text-[#F4B205]/40"
             />
             {isSearching && (
               <div className="w-3.5 h-3.5 border-2 border-[#F4B205] border-t-transparent rounded-full animate-spin shrink-0 mr-1" />
@@ -911,7 +911,7 @@ export default function HoloMapPlatform() {
                   setSearchSuggestions([]);
                   setShowSearchDropdown(false);
                 }}
-                className="p-1 hover:bg-white/10 rounded-full opacity-60 hover:opacity-100 mr-1"
+                className="p-1.5 hover:bg-white/10 rounded-full opacity-60 hover:opacity-100 mr-1 transition-all duration-200 hover:rotate-90"
               >
                 <X size={13} />
               </button>
@@ -919,12 +919,12 @@ export default function HoloMapPlatform() {
           </form>
 
           {showSearchDropdown && searchSuggestions.length > 0 && (
-            <div className="absolute left-0 right-0 top-full mt-2 w-full liquid-glass rounded-2xl border border-white/20 overflow-hidden shadow-2xl z-50 flex flex-col max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in duration-200">
-              {searchSuggestions.map(item => (
+            <div className="absolute left-0 right-0 top-full mt-2 w-full liquid-glass rounded-2xl border border-white/20 overflow-hidden shadow-2xl z-50 flex flex-col max-h-60 overflow-y-auto custom-scrollbar search-dropdown-enter">
+              {searchSuggestions.map((item, idx) => (
                 <div
                   key={item.id}
                   onClick={() => handleSelectSuggestion(item)}
-                  className="px-4 py-2.5 hover:bg-[#0F3E8C]/20 cursor-pointer border-b border-white/5 last:border-0 flex flex-col gap-0.5 transition-colors"
+                  className={`px-4 py-2.5 hover:bg-[#0F3E8C]/20 cursor-pointer border-b border-white/5 last:border-0 flex flex-col gap-0.5 transition-all duration-200 hover:pl-5 anim-stagger-${Math.min(idx + 1, 8)}`}
                 >
                   <span className="text-xs sm:text-sm font-semibold">{item.text}</span>
                   <span className="text-[11px] opacity-60 truncate">{item.place_name}</span>
@@ -940,22 +940,22 @@ export default function HoloMapPlatform() {
           ========================================================================= */}
       <nav 
         style={uiZoomStyle}
-        className="ui-scale-target fixed md:absolute bottom-2 md:bottom-4 inset-x-2 md:inset-x-auto md:left-4 md:top-20 md:w-12 h-13 md:h-auto z-40 liquid-glass rounded-2xl border border-white/15 shadow-2xl flex flex-row md:flex-col items-center justify-around md:justify-between px-2 py-1 md:px-0 md:py-3 pointer-events-auto origin-left"
+        className="ui-scale-target fixed md:absolute bottom-2 md:bottom-4 inset-x-2 md:inset-x-auto md:left-4 md:top-20 md:w-12 h-13 md:h-auto z-40 liquid-glass rounded-2xl border border-white/15 shadow-2xl flex flex-row md:flex-col items-center justify-around md:justify-between px-2 py-1 md:px-0 md:py-3 pointer-events-auto origin-left anim-slide-up-spring"
       >
         <div className="flex flex-row md:flex-col items-center gap-2 md:gap-3">
           {/* Territórios e Pontos Demarcados (Lista) */}
           <button
             onClick={() => setActiveModal(prev => prev === 'territories_list' ? null : 'territories_list')}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-95 transition-all relative ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-all duration-300 relative btn-ripple ${
               activeModal === 'territories_list' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100'
+                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
             }`}
             title="Territórios e Pontos Demarcados"
           >
             <Hexagon size={18} />
             {(demarcatedTerritories.length > 0 || objetos.length > 0) && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#F4B205] text-black text-[9px] font-black rounded-full flex items-center justify-center shadow">
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#F4B205] text-black text-[9px] font-black rounded-full flex items-center justify-center shadow anim-badge-pop">
                 {demarcatedTerritories.length + objetos.length}
               </span>
             )}
@@ -963,7 +963,7 @@ export default function HoloMapPlatform() {
 
           {/* Importar Planilha */}
           <label 
-            className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 active:scale-95 transition-all opacity-70 hover:opacity-100 cursor-pointer relative"
+            className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all duration-300 opacity-70 hover:opacity-100 hover:scale-110 cursor-pointer relative btn-ripple"
             title="Importar Planilha (CSV / Excel)"
           >
             {isProcessing ? (
@@ -984,10 +984,10 @@ export default function HoloMapPlatform() {
           {/* Camadas 3D (SOMENTE O ÍCONE) */}
           <button
             onClick={() => setActiveModal(prev => prev === 'layers' ? null : 'layers')}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-95 transition-all ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-all duration-300 btn-ripple ${
               activeModal === 'layers' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100'
+                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
             }`}
             title="Camadas 3D e Satélite"
           >
@@ -998,10 +998,10 @@ export default function HoloMapPlatform() {
         <div className="flex flex-row md:flex-col items-center gap-2 md:gap-3">
           <button
             onClick={() => setActiveModal(prev => prev === 'settings' ? null : 'settings')}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-95 transition-all ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-all duration-300 btn-ripple ${
               activeModal === 'settings' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100'
+                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110 hover:rotate-45'
             }`}
             title="Configurações (Tema Claro/Escuro, Escala)"
           >
@@ -1010,10 +1010,10 @@ export default function HoloMapPlatform() {
 
           <button
             onClick={() => setActiveModal(prev => prev === 'info' ? null : 'info')}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-95 transition-all ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-all duration-300 btn-ripple ${
               activeModal === 'info' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100'
+                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
             }`}
             title="Sobre o NUGEP MAPS"
           >
@@ -1027,16 +1027,16 @@ export default function HoloMapPlatform() {
           ========================================================================= */}
       <div 
         style={uiZoomStyle}
-        className="ui-scale-target absolute top-16 md:top-20 right-2 md:right-4 z-20 flex flex-col gap-2 pointer-events-auto origin-top-right"
+        className="ui-scale-target absolute top-16 md:top-20 right-2 md:right-4 z-20 flex flex-col gap-2 pointer-events-auto origin-top-right anim-scale-spring"
       >
         <div className="liquid-glass rounded-2xl p-1.5 flex flex-col gap-1.5 border border-white/20 shadow-2xl">
           {/* Navegação Padrão */}
           <button
             onClick={() => setActiveTool('navigate')}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 btn-ripple ${
               activeTool === 'navigate' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100'
+                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
             }`}
             title="Navegação / Mover"
           >
@@ -1049,10 +1049,10 @@ export default function HoloMapPlatform() {
               setActiveTool('point');
               showToast('Clique no mapa para marcar um ponto georreferenciado.', 'info');
             }}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 btn-ripple ${
               activeTool === 'point' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100'
+                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
             }`}
             title="Demarcar Ponto no Mapa"
           >
@@ -1071,10 +1071,10 @@ export default function HoloMapPlatform() {
                 showToast('Clique no mapa para traçar a rota de medição.', 'info');
               }
             }}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 btn-ripple ${
               activeTool === 'measure' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100'
+                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
             }`}
             title="Medir Distância (Régua)"
           >
@@ -1093,25 +1093,25 @@ export default function HoloMapPlatform() {
                 showToast('Clique no mapa para adicionar os vértices do território.', 'info');
               }
             }}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 btn-ripple ${
               activeTool === 'polygon' 
-                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100'
+                ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-md shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
             }`}
             title="Demarcar Território (Polígono)"
           >
             <Hexagon size={16} />
           </button>
 
-          <div className="w-full h-[1px] bg-white/10 my-0.5" />
+          <div className="w-full h-[1px] bg-white/10 my-0.5 divider-shimmer" />
 
           {/* Alternar Visão 3D / 2D */}
           <button
             onClick={toggle3DCamera}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all font-bold text-xs ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 font-bold text-xs btn-ripple ${
               viewState.pitch > 20 
-                ? 'bg-[#0F3E8C]/40 border border-[#F4B205] text-[#F4B205]' 
-                : 'hover:bg-white/10 opacity-70 hover:opacity-100'
+                ? 'bg-[#0F3E8C]/40 border border-[#F4B205] text-[#F4B205] anim-glow-pulse' 
+                : 'hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-110'
             }`}
             title="Alternar Perspectiva 3D/2D"
           >
@@ -1121,7 +1121,7 @@ export default function HoloMapPlatform() {
           {/* Resetar Norte */}
           <button
             onClick={() => setViewState(prev => ({ ...prev, bearing: 0 }))}
-            className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 opacity-70 hover:opacity-100 transition-all"
+            className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/10 opacity-70 hover:opacity-100 transition-all duration-300 hover:scale-110"
             title="Resetar Norte"
             style={{ transform: `rotate(${-viewState.bearing}deg)` }}
           >
@@ -1570,11 +1570,11 @@ export default function HoloMapPlatform() {
             </div>
           </div>
 
-          <div className="pt-3 border-t border-white/10 shrink-0 space-y-2">
+          <div className="pt-3 border-t border-white/10 divider-shimmer shrink-0 space-y-2">
             <div className="flex gap-2">
               <button
                 onClick={handleSaveActiveTerritory}
-                className="flex-1 py-3 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#0F3E8C] hover:bg-[#1E4DB7] text-white border border-[#F4B205]/40 transition-all shadow-lg flex items-center justify-center gap-1.5 active:scale-95"
+                className="flex-1 py-3 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#0F3E8C] hover:bg-[#1E4DB7] text-white border border-[#F4B205]/40 transition-all duration-300 shadow-lg flex items-center justify-center gap-1.5 active:scale-90 hover-lift btn-ripple"
               >
                 <Save size={15} />
                 <span>Salvar Território</span>
@@ -1582,7 +1582,7 @@ export default function HoloMapPlatform() {
 
               <button
                 onClick={handleDeleteActiveTerritory}
-                className="p-3 rounded-xl text-xs bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all"
+                className="p-3 rounded-xl text-xs bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all duration-300 hover:scale-110 active:scale-90"
                 title="Excluir Território"
               >
                 <Trash2 size={16} />
@@ -1591,7 +1591,7 @@ export default function HoloMapPlatform() {
 
             <button
               onClick={() => handleExportTerritoryPDF(activeTerritory)}
-              className="w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider liquid-glass border border-white/20 hover:bg-white/10 text-white transition-all flex items-center justify-center gap-2 active:scale-95"
+              className="w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider liquid-glass border border-white/20 hover:bg-white/10 text-white transition-all duration-300 flex items-center justify-center gap-2 active:scale-90 hover-lift btn-ripple"
             >
               <Download size={14} className="text-[#F4B205]" />
               <span>Exportar PDF deste Território (Marca d'Água)</span>
@@ -1699,11 +1699,11 @@ export default function HoloMapPlatform() {
             </div>
           </div>
 
-          <div className="pt-3 border-t border-white/10 shrink-0 space-y-2">
+          <div className="pt-3 border-t border-white/10 divider-shimmer shrink-0 space-y-2">
             <div className="flex gap-2">
               <button
                 onClick={handleSaveActivePoint}
-                className="flex-1 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#0F3E8C] hover:bg-[#1E4DB7] text-white border border-[#F4B205]/40 transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
+                className="flex-1 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#0F3E8C] hover:bg-[#1E4DB7] text-white border border-[#F4B205]/40 transition-all duration-300 shadow-md active:scale-90 flex items-center justify-center gap-1.5 hover-lift btn-ripple"
               >
                 <Save size={15} />
                 <span>Salvar Ponto</span>
@@ -1711,7 +1711,7 @@ export default function HoloMapPlatform() {
 
               <button
                 onClick={() => handleDeleteActivePoint()}
-                className="p-2.5 rounded-xl text-xs bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all"
+                className="p-2.5 rounded-xl text-xs bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all duration-300 hover:scale-110 active:scale-90"
                 title="Excluir Ponto"
               >
                 <Trash2 size={16} />
@@ -1720,7 +1720,7 @@ export default function HoloMapPlatform() {
 
             <button
               onClick={() => handleExportPointPDF(selectedPoint)}
-              className="w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wider liquid-glass border border-white/20 hover:bg-white/10 text-white transition-all flex items-center justify-center gap-2 active:scale-95"
+              className="w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wider liquid-glass border border-white/20 hover:bg-white/10 text-white transition-all duration-300 flex items-center justify-center gap-2 active:scale-90 hover-lift btn-ripple"
             >
               <Download size={14} className="text-[#F4B205]" />
               <span>Exportar PDF deste Ponto (Marca d'Água)</span>
@@ -1735,17 +1735,17 @@ export default function HoloMapPlatform() {
 
       {/* 1. LISTA DE TERRITÓRIOS E PONTOS DEMARCADOS */}
       {activeModal === 'territories_list' && (
-        <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+        <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 modal-backdrop-enter">
           <div 
             style={uiZoomStyle}
-            className="ui-scale-target liquid-glass rounded-3xl p-5 sm:p-7 w-full max-w-lg border border-white/20 shadow-2xl relative max-h-[88vh] flex flex-col"
+            className="ui-scale-target liquid-glass rounded-3xl p-5 sm:p-7 w-full max-w-lg border border-white/20 shadow-2xl relative max-h-[88vh] flex flex-col modal-content-enter"
           >
             <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0 mb-3">
               <div className="flex items-center gap-2.5">
                 <Hexagon size={20} className="text-[#F4B205]" />
                 <h3 className="font-bold text-base sm:text-lg">Demarcações do Sistema</h3>
               </div>
-              <button onClick={() => setActiveModal(null)} className="p-1.5 hover:bg-white/10 rounded-xl">
+              <button onClick={() => setActiveModal(null)} className="p-1.5 hover:bg-white/10 rounded-xl transition-all duration-300 hover:rotate-90 hover:scale-110">
                 <X size={18} />
               </button>
             </div>
@@ -1779,13 +1779,13 @@ export default function HoloMapPlatform() {
             <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2.5">
               {territoriesListTab === 'territories' ? (
                 demarcatedTerritories.length === 0 ? (
-                  <div className="py-12 text-center opacity-60">
-                    <Hexagon size={36} className="mx-auto mb-2 opacity-40 text-[#F4B205]" />
+                  <div className="py-12 text-center opacity-60 anim-fade-blur">
+                    <Hexagon size={36} className="mx-auto mb-2 opacity-40 text-[#F4B205] anim-float" />
                     <p className="text-xs">Nenhum território demarcado ainda.</p>
                     <p className="text-[11px] opacity-75 mt-1">Use a ferramenta de polígono no canto direito para traçar um perímetro ou importe uma planilha.</p>
                   </div>
                 ) : (
-                  demarcatedTerritories.map(terr => (
+                  demarcatedTerritories.map((terr, idx) => (
                     <div 
                       key={terr.id} 
                       onClick={() => {
@@ -1797,12 +1797,12 @@ export default function HoloMapPlatform() {
                         setViewState(prev => ({ ...prev, latitude: centerLat, longitude: centerLng, zoom: 15 }));
                         setActiveModal(null);
                       }}
-                      className="p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between gap-3 hover:bg-white/10 cursor-pointer transition-all group"
+                      className={`p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between gap-3 hover:bg-white/10 cursor-pointer transition-all duration-300 group hover-lift hover:border-white/20 anim-stagger-${Math.min(idx + 1, 8)}`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: terr.cor }} />
+                        <div className="w-4 h-4 rounded-full shrink-0 transition-transform duration-300 group-hover:scale-125" style={{ backgroundColor: terr.cor }} />
                         <div>
-                          <h4 className="font-semibold text-sm group-hover:text-amber-300 transition-colors">{terr.nome}</h4>
+                          <h4 className="font-semibold text-sm group-hover:text-amber-300 transition-colors duration-300">{terr.nome}</h4>
                           <p className="text-[11px] opacity-60">
                             {terr.areaHectares} hectares | {terr.areaKm2} km² | {terr.pontos.length} vértices
                           </p>
@@ -1812,7 +1812,7 @@ export default function HoloMapPlatform() {
                       <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => handleExportTerritoryPDF(terr)}
-                          className="p-2 rounded-xl bg-[#0F3E8C]/20 hover:bg-[#0F3E8C]/40 text-[#F4B205] text-xs flex items-center gap-1 font-bold"
+                          className="p-2 rounded-xl bg-[#0F3E8C]/20 hover:bg-[#0F3E8C]/40 text-[#F4B205] text-xs flex items-center gap-1 font-bold transition-all duration-200 hover:scale-110"
                           title="Exportar Dossiê em PDF"
                         >
                           <Download size={14} />
@@ -1824,7 +1824,7 @@ export default function HoloMapPlatform() {
                             if (activeTerritory?.id === terr.id) setActiveTerritory(null);
                             showToast('Território removido.');
                           }}
-                          className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs"
+                          className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs transition-all duration-200 hover:scale-110"
                           title="Excluir"
                         >
                           <Trash2 size={14} />
@@ -1835,13 +1835,13 @@ export default function HoloMapPlatform() {
                 )
               ) : (
                 objetos.length === 0 ? (
-                  <div className="py-12 text-center opacity-60">
-                    <MapPin size={36} className="mx-auto mb-2 opacity-40 text-[#F4B205]" />
+                  <div className="py-12 text-center opacity-60 anim-fade-blur">
+                    <MapPin size={36} className="mx-auto mb-2 opacity-40 text-[#F4B205] anim-float" />
                     <p className="text-xs">Nenhum ponto registrado ainda.</p>
                     <p className="text-[11px] opacity-75 mt-1">Use a ferramenta de marcador no canto direito ou importe uma planilha para registrar pontos.</p>
                   </div>
                 ) : (
-                  objetos.map(obj => (
+                  objetos.map((obj, idx) => (
                     <div 
                       key={obj.id} 
                       onClick={() => {
@@ -1849,14 +1849,14 @@ export default function HoloMapPlatform() {
                         setViewState(prev => ({ ...prev, latitude: obj.latitude, longitude: obj.longitude, zoom: 16 }));
                         setActiveModal(null);
                       }}
-                      className="p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between gap-3 hover:bg-white/10 cursor-pointer transition-all group"
+                      className={`p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between gap-3 hover:bg-white/10 cursor-pointer transition-all duration-300 group hover-lift hover:border-white/20 anim-stagger-${Math.min(idx + 1, 8)}`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-[#0F3E8C]/20 border border-[#F4B205]/40 flex items-center justify-center text-[#F4B205] shrink-0">
+                        <div className="w-8 h-8 rounded-xl bg-[#0F3E8C]/20 border border-[#F4B205]/40 flex items-center justify-center text-[#F4B205] shrink-0 transition-all duration-300 group-hover:bg-[#0F3E8C]/40 group-hover:border-[#F4B205]/70">
                           <MapPin size={15} />
                         </div>
                         <div className="min-w-0">
-                          <h4 className="font-semibold text-sm group-hover:text-amber-300 transition-colors truncate">{obj.titulo}</h4>
+                          <h4 className="font-semibold text-sm group-hover:text-amber-300 transition-colors duration-300 truncate">{obj.titulo}</h4>
                           <p className="text-[11px] opacity-60 truncate">
                             {obj.objeto || 'Ponto'} • {obj.autor || 'Território'} ({obj.latitude.toFixed(4)}, {obj.longitude.toFixed(4)})
                           </p>
@@ -1871,7 +1871,7 @@ export default function HoloMapPlatform() {
                       <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => handleExportPointPDF(obj)}
-                          className="p-2 rounded-xl bg-[#0F3E8C]/20 hover:bg-[#0F3E8C]/40 text-[#F4B205] text-xs flex items-center gap-1 font-bold"
+                          className="p-2 rounded-xl bg-[#0F3E8C]/20 hover:bg-[#0F3E8C]/40 text-[#F4B205] text-xs flex items-center gap-1 font-bold transition-all duration-200 hover:scale-110"
                           title="Exportar PDF deste Ponto"
                         >
                           <Download size={14} />
@@ -1879,7 +1879,7 @@ export default function HoloMapPlatform() {
 
                         <button
                           onClick={() => handleDeleteActivePoint(obj.id)}
-                          className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs"
+                          className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs transition-all duration-200 hover:scale-110"
                           title="Excluir"
                         >
                           <Trash2 size={14} />
@@ -1896,10 +1896,10 @@ export default function HoloMapPlatform() {
 
       {/* 2. MODAL DE EXPORTAÇÃO DO DOSSIÊ COM MARCA D'ÁGUA DO NUGEP */}
       {activeModal === 'export_dossier' && (
-        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
+        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 modal-backdrop-enter">
           <div 
             style={uiZoomStyle}
-            className="ui-scale-target liquid-glass rounded-3xl p-5 sm:p-8 w-full max-w-3xl max-h-[92vh] border border-[#F4B205]/40 shadow-2xl flex flex-col overflow-hidden relative watermark-nugep"
+            className="ui-scale-target liquid-glass rounded-3xl p-5 sm:p-8 w-full max-w-3xl max-h-[92vh] border border-[#F4B205]/40 shadow-2xl flex flex-col overflow-hidden relative watermark-nugep modal-content-enter"
           >
             
             <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-white/10 shrink-0">
@@ -2071,7 +2071,7 @@ export default function HoloMapPlatform() {
                 </button>
                 <button
                   onClick={triggerNativePrint}
-                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-[#0F3E8C] hover:bg-[#1E4DB7] text-white border border-[#F4B205]/40 transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 flex-1 sm:flex-initial"
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-[#0F3E8C] hover:bg-[#1E4DB7] text-white border border-[#F4B205]/40 transition-all duration-300 shadow-md active:scale-90 flex items-center justify-center gap-2 flex-1 sm:flex-initial hover-lift btn-ripple"
                 >
                   <Printer size={16} />
                   <span>Imprimir / Salvar em PDF</span>
@@ -2084,17 +2084,17 @@ export default function HoloMapPlatform() {
 
       {/* 3. MODAL DE CAMADAS 3D E SATÉLITE */}
       {activeModal === 'layers' && (
-        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 modal-backdrop-enter">
           <div 
             style={uiZoomStyle}
-            className="ui-scale-target liquid-glass rounded-3xl p-6 w-full max-w-md border border-white/20 shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar"
+            className="ui-scale-target liquid-glass rounded-3xl p-6 w-full max-w-md border border-white/20 shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar modal-content-enter"
           >
             <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-5">
               <div className="flex items-center gap-2">
                 <Layers size={20} className="text-[#F4B205]" />
                 <h3 className="font-bold text-base">Camadas e Perspectiva 3D</h3>
               </div>
-              <button onClick={() => setActiveModal(null)} className="p-1.5 hover:bg-white/10 rounded-xl">
+              <button onClick={() => setActiveModal(null)} className="p-1.5 hover:bg-white/10 rounded-xl transition-all duration-300 hover:rotate-90 hover:scale-110">
                 <X size={18} />
               </button>
             </div>
@@ -2196,10 +2196,10 @@ export default function HoloMapPlatform() {
 
       {/* 4. MODAL DE IMPORTAÇÃO DE PLANILHA */}
       {activeModal === 'spreadsheet' && parsedSpreadsheet && (
-        <div className="absolute inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200">
+        <div className="absolute inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 sm:p-8 modal-backdrop-enter">
           <div 
             style={uiZoomStyle}
-            className="ui-scale-target liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-4xl max-h-[90vh] border border-white/20 shadow-2xl flex flex-col overflow-hidden"
+            className="ui-scale-target liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-4xl max-h-[90vh] border border-white/20 shadow-2xl flex flex-col overflow-hidden modal-content-enter"
           >
             <div className="flex items-center justify-between pb-4 border-b border-white/10 shrink-0">
               <div className="flex items-center gap-3">
@@ -2339,17 +2339,17 @@ export default function HoloMapPlatform() {
 
       {/* 5. MODAL DE CONFIGURAÇÕES */}
       {activeModal === 'settings' && (
-        <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 modal-backdrop-enter">
           <div 
             style={uiZoomStyle}
-            className="ui-scale-target liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-md border border-white/20 shadow-2xl relative"
+            className="ui-scale-target liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-md border border-white/20 shadow-2xl relative modal-content-enter"
           >
             <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-6">
               <div className="flex items-center gap-2">
                 <Settings size={20} className="text-[#F4B205]" />
                 <h3 className="font-bold text-base sm:text-lg">Configurações</h3>
               </div>
-              <button onClick={() => setActiveModal(null)} className="p-1.5 hover:bg-white/10 rounded-xl">
+              <button onClick={() => setActiveModal(null)} className="p-1.5 hover:bg-white/10 rounded-xl transition-all duration-300 hover:rotate-90 hover:scale-110">
                 <X size={18} />
               </button>
             </div>
@@ -2419,10 +2419,10 @@ export default function HoloMapPlatform() {
 
       {/* 6. MODAL SOBRE O SISTEMA */}
       {activeModal === 'info' && (
-        <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 modal-backdrop-enter">
           <div 
             style={uiZoomStyle}
-            className="ui-scale-target liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-md border border-white/20 shadow-2xl relative"
+            className="ui-scale-target liquid-glass rounded-3xl p-6 sm:p-8 w-full max-w-md border border-white/20 shadow-2xl relative modal-content-enter"
           >
             <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
               <div className="flex items-center gap-2.5">
@@ -2431,7 +2431,7 @@ export default function HoloMapPlatform() {
                 </div>
                 <h3 className="font-bold text-base sm:text-lg">NUGEP MAPS</h3>
               </div>
-              <button onClick={() => setActiveModal(null)} className="p-1.5 hover:bg-white/10 rounded-xl">
+              <button onClick={() => setActiveModal(null)} className="p-1.5 hover:bg-white/10 rounded-xl transition-all duration-300 hover:rotate-90 hover:scale-110">
                 <X size={18} />
               </button>
             </div>
