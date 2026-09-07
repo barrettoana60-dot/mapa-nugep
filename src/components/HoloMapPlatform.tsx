@@ -1491,6 +1491,7 @@ export default function HoloMapPlatform() {
                   setSearchQuery('');
                   setSearchSuggestions([]);
                   setActiveSuggestionIndex(-1);
+                  setSearchedLocation(null);
                 }}
                 className="p-1.5 hover:bg-white/10 rounded-full opacity-60 hover:opacity-100 mr-1 transition-all duration-200 hover:rotate-90 text-gray-300 hover:text-white"
                 title="Limpar busca"
