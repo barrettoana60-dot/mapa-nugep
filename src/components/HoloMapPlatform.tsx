@@ -1692,17 +1692,20 @@ export default function HoloMapPlatform() {
       {/* =========================================================================
           ESPAÇO DE TRABALHO: DOCK VERTICAL EM CÁPSULA (MODELO EXATO DA IMAGEM)
           ========================================================================= */}
+      {/* =========================================================================
+          ESPAÇO DE TRABALHO: DOCK RESPONSIVO (BARRA INFERIOR NO MOBILE, LATERAL NO DESKTOP)
+          ========================================================================= */}
       <nav 
         style={uiZoomStyle}
-        className="ui-scale-target fixed left-2.5 sm:left-4 top-[5.25rem] bottom-4 z-40 w-11 sm:w-13 liquid-glass rounded-full border border-white/15 shadow-[0_12px_40px_rgba(0,0,0,0.5)] flex flex-col items-center justify-between py-3.5 sm:py-4 pointer-events-auto origin-left anim-slide-up-spring overflow-visible"
+        className="ui-scale-target fixed bottom-3 inset-x-3 max-w-sm sm:max-w-md mx-auto h-14 md:h-auto md:max-w-none md:inset-x-auto md:left-4 md:top-[5.25rem] md:bottom-4 md:w-13 z-40 liquid-glass rounded-full border border-white/15 shadow-[0_12px_40px_rgba(0,0,0,0.55)] flex flex-row md:flex-col items-center justify-between px-3 py-1.5 md:px-0 md:py-4 pointer-events-auto origin-bottom md:origin-left anim-slide-up-spring overflow-visible"
       >
-        {/* Grupo Superior: Territórios/Pontos, Importar Planilha, Camadas */}
-        <div className="flex flex-col items-center gap-3 sm:gap-3.5 overflow-visible">
+        {/* Grupo Superior / Inicial: Territórios/Pontos, Importar Planilha, Camadas */}
+        <div className="flex flex-row md:flex-col items-center justify-around md:justify-start gap-1 sm:gap-2 md:gap-3.5 flex-1 md:flex-initial overflow-visible">
           {/* Territórios e Pontos Demarcados (Lista) */}
           <div className="relative group flex items-center justify-center">
             <button
               onClick={() => setActiveModal(prev => prev === 'territories_list' ? null : 'territories_list')}
-              className={`w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center active:scale-90 transition-all duration-300 ${
+              className={`w-9 h-9 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center active:scale-90 transition-all duration-300 ${
                 activeModal === 'territories_list' 
                   ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
                   : 'text-gray-300 hover:text-white hover:bg-white/10 hover:scale-110'
@@ -1721,7 +1724,7 @@ export default function HoloMapPlatform() {
           {/* Importar Planilha */}
           <div className="relative group flex items-center justify-center">
             <label 
-              className="w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 active:scale-90 transition-all duration-300 hover:scale-110 cursor-pointer relative"
+              className="w-9 h-9 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 active:scale-90 transition-all duration-300 hover:scale-110 cursor-pointer relative"
             >
               {isProcessing ? (
                 <div className="w-4 h-4 border-2 border-[#F4B205] border-t-transparent rounded-full animate-spin" />
@@ -1744,7 +1747,7 @@ export default function HoloMapPlatform() {
           <div className="relative group flex items-center justify-center">
             <button
               onClick={() => setActiveModal(prev => prev === 'layers' ? null : 'layers')}
-              className={`w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center active:scale-90 transition-all duration-300 ${
+              className={`w-9 h-9 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center active:scale-90 transition-all duration-300 ${
                 activeModal === 'layers' 
                   ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
                   : 'text-gray-300 hover:text-white hover:bg-white/10 hover:scale-110'
@@ -1756,13 +1759,16 @@ export default function HoloMapPlatform() {
           </div>
         </div>
 
-        {/* Grupo Inferior: Configurações, Informações */}
-        <div className="flex flex-col items-center gap-3 sm:gap-3.5">
+        {/* Divisor vertical suave no mobile */}
+        <div className="h-5 w-px bg-white/10 md:hidden my-auto" />
+
+        {/* Grupo Inferior / Final: Configurações, Informações */}
+        <div className="flex flex-row md:flex-col items-center justify-around md:justify-end gap-1 sm:gap-2 md:gap-3.5 flex-1 md:flex-initial">
           {/* Configurações */}
           <div className="relative group flex items-center justify-center">
             <button
               onClick={() => setActiveModal(prev => prev === 'settings' ? null : 'settings')}
-              className={`w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center active:scale-90 transition-all duration-300 ${
+              className={`w-9 h-9 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center active:scale-90 transition-all duration-300 ${
                 activeModal === 'settings' 
                   ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
                   : 'text-gray-300 hover:text-white hover:bg-white/10 hover:scale-110 hover:rotate-45'
@@ -1777,7 +1783,7 @@ export default function HoloMapPlatform() {
           <div className="relative group flex items-center justify-center">
             <button
               onClick={() => setActiveModal(prev => prev === 'info' ? null : 'info')}
-              className={`w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center active:scale-90 transition-all duration-300 ${
+              className={`w-9 h-9 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center active:scale-90 transition-all duration-300 ${
                 activeModal === 'info' 
                   ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
                   : 'text-gray-300 hover:text-white hover:bg-white/10 hover:scale-110'
@@ -1889,7 +1895,7 @@ export default function HoloMapPlatform() {
       {activeTool === 'polygon' && (
         <div 
           style={uiZoomStyle}
-          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-3xl p-3 sm:p-4 border border-[#F4B205]/60 shadow-[0_16px_50px_rgba(0,0,0,0.6)] flex flex-col md:flex-row items-center gap-3 sm:gap-4 anim-slide-up-spring pointer-events-auto max-w-[95vw] md:max-w-[92vw] backdrop-blur-2xl"
+          className="ui-scale-target fixed md:absolute bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-3xl p-3 sm:p-4 border border-[#F4B205]/60 shadow-[0_16px_50px_rgba(0,0,0,0.6)] flex flex-col md:flex-row items-center gap-3 sm:gap-4 anim-slide-up-spring pointer-events-auto max-w-[95vw] md:max-w-[92vw] backdrop-blur-2xl"
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-[#0F3E8C]/40 border border-[#F4B205]/60 flex items-center justify-center text-[#F4B205] shadow-[0_0_15px_rgba(244,178,5,0.25)] shrink-0">
@@ -1978,7 +1984,7 @@ export default function HoloMapPlatform() {
       {activeTool === 'measure' && measurementPoints.length > 0 && (
         <div 
           style={uiZoomStyle}
-          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-3xl px-5 py-3 border border-[#F4B205]/40 shadow-[0_16px_50px_rgba(0,0,0,0.6)] flex items-center gap-4 anim-slide-up-spring pointer-events-auto backdrop-blur-2xl"
+          className="ui-scale-target fixed md:absolute bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 liquid-glass rounded-3xl px-5 py-3 border border-[#F4B205]/40 shadow-[0_16px_50px_rgba(0,0,0,0.6)] flex items-center gap-4 anim-slide-up-spring pointer-events-auto backdrop-blur-2xl"
         >
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-[#0F3E8C]/30 border border-[#F4B205]/40 flex items-center justify-center text-[#F4B205]">
@@ -2275,7 +2281,7 @@ export default function HoloMapPlatform() {
       {activeTerritory && (
         <aside 
           style={uiZoomStyle}
-          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-20 md:top-[92px] md:w-96 max-h-[82vh] md:max-h-[calc(100vh-6.5rem)] liquid-glass rounded-2xl p-4 sm:p-5 border border-[#F4B205]/40 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto origin-bottom-left md:origin-top-left"
+          className="ui-scale-target fixed md:absolute bottom-20 md:bottom-4 inset-x-2 md:inset-x-auto md:left-20 md:top-[92px] md:w-96 max-h-[72vh] md:max-h-[calc(100vh-6.5rem)] liquid-glass rounded-2xl p-4 sm:p-5 border border-[#F4B205]/40 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto origin-bottom-left md:origin-top-left"
         >
           <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
             <div className="flex items-center gap-2">
@@ -2416,7 +2422,7 @@ export default function HoloMapPlatform() {
       {selectedPoint && (
         <aside 
           style={uiZoomStyle}
-          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-20 md:top-[92px] md:w-96 max-h-[82vh] md:max-h-[calc(100vh-6.5rem)] liquid-glass rounded-2xl p-4 sm:p-5 border border-[#F4B205]/40 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto origin-bottom-left md:origin-top-left"
+          className="ui-scale-target fixed md:absolute bottom-20 md:bottom-4 inset-x-2 md:inset-x-auto md:left-20 md:top-[92px] md:w-96 max-h-[72vh] md:max-h-[calc(100vh-6.5rem)] liquid-glass rounded-2xl p-4 sm:p-5 border border-[#F4B205]/40 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto origin-bottom-left md:origin-top-left"
         >
           <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
             <div className="flex items-center gap-2">
