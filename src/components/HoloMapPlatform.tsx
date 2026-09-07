@@ -1651,9 +1651,6 @@ export default function HoloMapPlatform() {
             </div>
           )}
         </div>
-        <button onClick={() => fileInputRef.current?.click()} className="pointer-events-auto hidden items-center gap-2 rounded-xl bg-[#F4B205] px-3.5 py-2.5 text-xs font-bold text-[#0F3E8C] shadow-sm transition hover:bg-[#fbc337] md:flex" title="Importar planilha CSV ou Excel">
-          <Upload size={15} /> Importar dados
-        </button>
       </div>
 
       {/* PAINEL DE TRABALHO: dados e camadas ficam sempre visíveis no desktop. */}
