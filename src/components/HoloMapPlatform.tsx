@@ -10,7 +10,8 @@ import {
   FileSpreadsheet, Edit3, Save, Sun, Moon, 
   RotateCcw, Hexagon, Globe, Building2, CloudSun,
   CheckCircle2, AlertCircle, FileText, MousePointer, Landmark,
-  Printer, ShieldCheck, Undo2, ChevronRight, LocateFixed, Wrench
+  Printer, ShieldCheck, Undo2, ChevronRight, LocateFixed, Wrench,
+  GraduationCap
 } from 'lucide-react';
 import { NUGEP_LOGO } from '../assets/logo';
 
@@ -302,7 +303,7 @@ export default function HoloMapPlatform() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isSearchClicked, setIsSearchClicked] = useState(false);
   const [searchCategoryFilter, setSearchCategoryFilter] = useState<'all' | 'territories' | 'points' | 'coords'>('all');
-  const [searchedLocation, setSearchedLocation] = useState<{ lng: number; lat: number; label: string } | null>(null);
+  const [searchedLocation, setSearchedLocation] = useState<{ lng: number; lat: number; label: string; category?: string } | null>(null);
 
   // Medição e rascunho de polígono
   const [measurementPoints, setMeasurementPoints] = useState<[number, number][]>([]);
@@ -541,11 +542,9 @@ export default function HoloMapPlatform() {
     try {
       const params = new URLSearchParams({
         access_token: MAPBOX_TOKEN,
-        limit: '5',
+        limit: '6',
         language: 'pt',
-        country: 'br',
-        proximity: '-36.06,-9.17',
-        types: 'address,place,poi,neighborhood,locality,district',
+        types: 'country,region,postcode,district,place,locality,neighborhood,address,poi',
       });
       const res = await fetch(
         `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?${params}`
@@ -553,12 +552,49 @@ export default function HoloMapPlatform() {
       if (res.ok) {
         const data = await res.json();
         if (data?.features && data.features.length > 0) {
-          return data.features.map((f: any) => ({
-            id: f.id,
-            text: f.text,
-            place_name: f.place_name,
-            center: f.center as [number, number]
-          }));
+          return data.features.map((f: any) => {
+            const placeType = f.place_type?.[0] || '';
+            let label = 'Localidade';
+            let iconType = 'place';
+            if (placeType === 'country') {
+              label = 'País';
+              iconType = 'country';
+            } else if (placeType === 'region' || placeType === 'place' || placeType === 'locality') {
+              label = 'Cidade / Município';
+              iconType = 'city';
+            } else if (placeType === 'district' || placeType === 'neighborhood') {
+              label = 'Bairro';
+              iconType = 'place';
+            } else if (placeType === 'poi') {
+              const cat = (f.properties?.category || '').toLowerCase();
+              if (cat.includes('college') || cat.includes('university') || cat.includes('school') || cat.includes('education')) {
+                label = 'Universidade / Instituição de Ensino';
+                iconType = 'education';
+              } else if (cat.includes('hospital') || cat.includes('health') || cat.includes('clinic')) {
+                label = 'Hospital / Saúde';
+                iconType = 'health';
+              } else if (cat.includes('museum') || cat.includes('monument') || cat.includes('historic') || cat.includes('culture')) {
+                label = 'Patrimônio Cultural / Museu';
+                iconType = 'culture';
+              } else {
+                label = 'Ponto de Interesse / Estabelecimento';
+                iconType = 'business';
+              }
+            } else if (placeType === 'address') {
+              label = 'Endereço / Logradouro';
+              iconType = 'place';
+            }
+
+            return {
+              id: f.id,
+              text: f.text,
+              place_name: f.place_name,
+              category_label: label,
+              category_type: placeType,
+              category_icon: iconType,
+              center: f.center as [number, number]
+            };
+          });
         }
       }
     } catch (e) {}
@@ -753,9 +789,32 @@ export default function HoloMapPlatform() {
     }
     if (item.center && Array.isArray(item.center)) {
       const [lng, lat] = item.center;
-      setViewState(prev => ({ ...prev, longitude: lng, latitude: lat, zoom: 16, pitch: 0, bearing: 0 }));
-      if (!item.isTerritory && !item.isPoint) setSearchedLocation({ lng, lat, label: item.text });
-      showToast(`Localizado: ${item.text}`, 'success');
+
+      // Zoom inteligente adaptativo conforme a escala geográfica do local
+      let targetZoom = 16.5;
+      const type = (item.category_type || '').toLowerCase();
+      const icon = item.category_icon;
+      if (icon === 'country' || type === 'country') {
+        targetZoom = 5;
+      } else if (icon === 'city' || type === 'city' || type === 'municipality' || type === 'town' || type === 'region' || type === 'state') {
+        targetZoom = 12;
+      } else if (type === 'suburb' || type === 'neighbourhood' || type === 'district' || type === 'locality') {
+        targetZoom = 14.5;
+      } else {
+        targetZoom = 16.5;
+      }
+
+      setViewState(prev => ({ ...prev, longitude: lng, latitude: lat, zoom: targetZoom, pitch: 0, bearing: 0 }));
+      if (!item.isTerritory && !item.isPoint) {
+        setSearchedLocation({ 
+          lng, 
+          lat, 
+          label: item.text,
+          category: item.category_label 
+        });
+      }
+      const labelBadge = item.category_label ? ` [${item.category_label}]` : '';
+      showToast(`Localizado: ${item.text}${labelBadge}`, 'success');
     }
   };
 
@@ -1648,28 +1707,79 @@ export default function HoloMapPlatform() {
                           className={`px-4 py-3 cursor-pointer border-b border-white/5 last:border-0 flex items-center justify-between gap-3 transition-all duration-200 hover:pl-5 group anim-stagger-${Math.min(idx + 1, 8)} ${idx === activeSuggestionIndex ? 'bg-[#0F3E8C]/35 ring-1 ring-inset ring-[#F4B205]/40' : 'hover:bg-[#0F3E8C]/25'}`}
                         >
                           <div className="flex items-center gap-3 min-w-0">
-                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border transition-colors ${
                               item.isTerritory 
                                 ? 'bg-amber-500/20 border-amber-500/50 text-[#F4B205]' 
                                 : item.isPoint 
                                   ? 'bg-[#0F3E8C]/30 border-[#F4B205]/40 text-[#F4B205]' 
-                                  : 'bg-white/10 border-white/15 text-gray-300'
+                                  : item.category_icon === 'education'
+                                    ? 'bg-sky-500/20 border-sky-500/40 text-sky-400'
+                                    : item.category_icon === 'health'
+                                      ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
+                                      : item.category_icon === 'culture'
+                                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                                        : item.category_icon === 'city'
+                                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                                          : item.category_icon === 'country'
+                                            ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400'
+                                            : item.category_icon === 'business'
+                                              ? 'bg-amber-500/15 border-amber-500/35 text-[#F4B205]'
+                                              : item.category_icon === 'public'
+                                                ? 'bg-blue-500/20 border-blue-500/40 text-blue-300'
+                                                : 'bg-white/10 border-white/15 text-gray-300'
                             }`}>
-                              {item.isTerritory ? <Hexagon size={15} /> : <MapPin size={15} />}
+                              {item.isTerritory ? (
+                                <Hexagon size={15} />
+                              ) : item.isPoint ? (
+                                <MapPin size={15} />
+                              ) : item.category_icon === 'education' ? (
+                                <GraduationCap size={15} />
+                              ) : item.category_icon === 'city' ? (
+                                <Building2 size={15} />
+                              ) : item.category_icon === 'country' ? (
+                                <Globe size={15} />
+                              ) : item.category_icon === 'culture' || item.category_icon === 'public' ? (
+                                <Landmark size={15} />
+                              ) : item.category_icon === 'business' ? (
+                                <Building2 size={15} />
+                              ) : (
+                                <MapPin size={15} />
+                              )}
                             </div>
                             <div className="flex flex-col gap-0.5 min-w-0">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs sm:text-sm font-bold text-white group-hover:text-[#F4B205] transition-colors truncate">
                                   {item.text}
                                 </span>
                                 {item.isTerritory && (
-                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-[#F4B205] font-bold border border-amber-500/30">
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-[#F4B205] font-bold border border-amber-500/30 shrink-0">
                                     TERRITÓRIO
                                   </span>
                                 )}
                                 {item.isPoint && (
-                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#0F3E8C]/30 text-amber-300 font-bold border border-blue-400/30">
-                                    PONTO
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#0F3E8C]/40 text-amber-300 font-bold border border-blue-400/30 shrink-0">
+                                    PONTO CULTURAL
+                                  </span>
+                                )}
+                                {!item.isTerritory && !item.isPoint && item.category_label && (
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold border shrink-0 ${
+                                    item.category_icon === 'education'
+                                      ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
+                                      : item.category_icon === 'health'
+                                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                        : item.category_icon === 'culture'
+                                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                          : item.category_icon === 'city'
+                                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                            : item.category_icon === 'country'
+                                              ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+                                              : item.category_icon === 'public'
+                                                ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                                                : item.category_icon === 'business'
+                                                  ? 'bg-amber-500/15 text-amber-200 border-amber-500/30'
+                                                  : 'bg-white/10 text-white/70 border-white/20'
+                                  }`}>
+                                    {item.category_label}
                                   </span>
                                 )}
                               </div>
@@ -2239,7 +2349,14 @@ export default function HoloMapPlatform() {
                 <div className="relative w-9 h-9 rounded-full bg-[#F4B205] text-[#0F3E8C] border-2 border-white shadow-xl flex items-center justify-center">
                   <Search size={16} strokeWidth={3} />
                 </div>
-                <div className="mt-1 max-w-40 truncate px-2 py-1 rounded-lg bg-[#050608]/85 text-[10px] font-bold text-white border border-[#F4B205]/50">{searchedLocation.label}</div>
+                <div className="mt-1 max-w-56 px-2.5 py-1 rounded-lg bg-[#050608]/90 text-[10px] font-bold text-white border border-[#F4B205]/60 shadow-xl flex flex-col items-center text-center backdrop-blur-md">
+                  <span className="truncate max-w-full">{searchedLocation.label}</span>
+                  {searchedLocation.category && (
+                    <span className="text-[8.5px] text-[#F4B205] font-semibold tracking-wide uppercase mt-0.5">
+                      {searchedLocation.category}
+                    </span>
+                  )}
+                </div>
               </div>
             </Marker>
           )}
