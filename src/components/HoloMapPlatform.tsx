@@ -10,7 +10,7 @@ import {
   FileSpreadsheet, Edit3, Save, Sun, Moon, 
   RotateCcw, Hexagon, Globe, Building2, CloudSun,
   CheckCircle2, AlertCircle, FileText, MousePointer, Landmark,
-  Printer, ShieldCheck, Undo2, ChevronRight, LocateFixed
+  Printer, ShieldCheck, Undo2, ChevronRight, LocateFixed, Wrench
 } from 'lucide-react';
 import { NUGEP_LOGO } from '../assets/logo';
 
@@ -264,6 +264,7 @@ export default function HoloMapPlatform() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const searchRequestRef = useRef(0);
+  const toolsMenuRef = useRef<HTMLDivElement>(null);
 
   // Estados principais
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
@@ -277,6 +278,7 @@ export default function HoloMapPlatform() {
 
   // Modos de ferramentas
   const [activeTool, setActiveTool] = useState<'navigate' | 'point' | 'measure' | 'polygon'>('navigate');
+  const [isToolsOpen, setIsToolsOpen] = useState(false);
 
   // A abertura é cartográfica e legível. Relevo, satélite e 3D são escolhas
   // explícitas do usuário — não um efeito que esconda os dados do projeto.
@@ -389,6 +391,9 @@ export default function HoloMapPlatform() {
         setShowSearchDropdown(true);
         setTimeout(() => setIsSearchClicked(false), 320);
       } else if (e.key === 'Escape') {
+        if (isToolsOpen) {
+          setIsToolsOpen(false);
+        }
         if (isSearchFocused || showSearchDropdown) {
           setIsSearchFocused(false);
           setShowSearchDropdown(false);
@@ -398,7 +403,19 @@ export default function HoloMapPlatform() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSearchFocused, showSearchDropdown]);
+  }, [isSearchFocused, showSearchDropdown, isToolsOpen]);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (toolsMenuRef.current && !toolsMenuRef.current.contains(e.target as Node)) {
+        setIsToolsOpen(false);
+      }
+    };
+    if (isToolsOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isToolsOpen]);
 
   // Alternador de Camadas
   const toggleLayer = (layerKey: string) => {
@@ -1779,50 +1796,98 @@ export default function HoloMapPlatform() {
         </div>
       </nav>
 
-      {/* Ferramentas de edição */}
-      <div style={uiZoomStyle} className="ui-scale-target absolute right-3 top-[5.75rem] z-20 pointer-events-auto origin-top-right md:right-4">
-        <div className="w-11 rounded-2xl border border-white/12 bg-[#101317]/95 p-1.5 shadow-2xl backdrop-blur-xl md:w-[148px] md:p-2">
-          <p className="mb-2 hidden px-1.5 pt-1 text-[9px] font-bold uppercase tracking-[0.18em] text-gray-600 md:block">Ferramentas</p>
-          {[
-            { key: 'navigate' as const, label: 'Navegar', icon: MousePointer, action: () => setActiveTool('navigate') },
-            { key: 'point' as const, label: 'Adicionar ponto', icon: MapPin, action: () => { setActiveTool('point'); showToast('Clique no mapa para criar um ponto.', 'info'); } },
-            { key: 'measure' as const, label: 'Medir distância', icon: Ruler, action: () => { if (activeTool === 'measure') { setActiveTool('navigate'); setMeasurementPoints([]); } else { setActiveTool('measure'); setMeasurementPoints([]); showToast('Clique para medir distância.', 'info'); } } },
-            { key: 'polygon' as const, label: 'Demarcar área', icon: Hexagon, action: () => { if (activeTool === 'polygon') { setActiveTool('navigate'); setPolygonDraft([]); } else { setActiveTool('polygon'); setPolygonDraft([]); showToast('Clique nos vértices da área a demarcar.', 'info'); } } },
-          ].map(tool => {
-            const Icon = tool.icon;
-            const active = activeTool === tool.key;
-            return (
-              <button
-                key={tool.key}
-                onClick={tool.action}
-                className={`mb-0.5 flex w-full items-center gap-2 rounded-xl p-2 text-left transition-all duration-150 ${
-                  active ? 'bg-[#0F3E8C] text-white shadow-md' : 'text-gray-500 hover:bg-white/[0.07] hover:text-white'
-                }`}
-                title={tool.label}
-              >
-                <Icon size={15} className={active ? 'text-[#F4B205] shrink-0' : 'shrink-0'} />
-                <span className="hidden text-xs font-medium md:block truncate">{tool.label}</span>
-              </button>
-            );
-          })}
-          <div className="my-2 h-px bg-white/8 mx-1" />
+      {/* Ferramentas de edição: botão único expansível com todas as funcionalidades */}
+      <div 
+        ref={toolsMenuRef}
+        style={uiZoomStyle} 
+        className="ui-scale-target fixed right-3 md:right-4 top-[5.25rem] z-30 pointer-events-auto origin-top-right flex flex-col items-end"
+      >
+        {/* Botão de disparo com ícone */}
+        <div className="relative group flex items-center justify-center">
           <button
-            onClick={toggle3DCamera}
-            className={`mb-0.5 flex w-full items-center gap-2 rounded-xl p-2 text-left transition-all duration-150 ${viewState.pitch > 20 ? 'bg-[#0F3E8C]/50 text-white' : 'text-gray-500 hover:bg-white/[0.07] hover:text-white'}`}
-            title="Alternar perspectiva 2D/3D"
+            onClick={() => setIsToolsOpen(prev => !prev)}
+            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full liquid-glass border border-white/15 shadow-2xl flex items-center justify-center active:scale-90 transition-all duration-300 ${
+              isToolsOpen || activeTool !== 'navigate'
+                ? 'bg-[#0F3E8C] text-[#F4B205] border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse'
+                : 'text-gray-300 hover:text-white hover:bg-white/10 hover:scale-110'
+            }`}
+            title="Ferramentas"
           >
-            <span className="w-[15px] text-center text-[11px] font-bold text-[#F4B205] shrink-0">{viewState.pitch > 20 ? '3D' : '2D'}</span>
-            <span className="hidden text-xs font-medium md:block">Perspectiva</span>
+            {activeTool === 'point' ? (
+              <MapPin size={18} />
+            ) : activeTool === 'measure' ? (
+              <Ruler size={18} />
+            ) : activeTool === 'polygon' ? (
+              <Hexagon size={18} />
+            ) : (
+              <Wrench size={18} />
+            )}
+            {activeTool !== 'navigate' && !isToolsOpen && (
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#F4B205] border-2 border-black" />
+            )}
           </button>
-          <button
-            onClick={() => setViewState(prev => ({ ...prev, bearing: 0 }))}
-            className="flex w-full items-center gap-2 rounded-xl p-2 text-left text-gray-500 transition hover:bg-white/[0.07] hover:text-white"
-            title="Resetar norte"
-          >
-            <Compass size={15} className="shrink-0" style={{ transform: `rotate(${-viewState.bearing}deg)` }} />
-            <span className="hidden text-xs font-medium md:block">Resetar norte</span>
-          </button>
+          {!isToolsOpen && (
+            <div className="hidden md:block nugep-tooltip right-13">Ferramentas</div>
+          )}
         </div>
+
+        {/* Menu suspenso com todas as funcionalidades */}
+        {isToolsOpen && (
+          <div className="mt-2 w-48 rounded-2xl border border-white/15 bg-[#101317]/96 p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-2 pt-1 pb-1.5 border-b border-white/10 mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400">Ferramentas</span>
+              <button 
+                onClick={() => setIsToolsOpen(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition"
+              >
+                <X size={13} />
+              </button>
+            </div>
+
+            {[
+              { key: 'navigate' as const, label: 'Navegar', icon: MousePointer, action: () => { setActiveTool('navigate'); setIsToolsOpen(false); } },
+              { key: 'point' as const, label: 'Adicionar ponto', icon: MapPin, action: () => { setActiveTool('point'); setIsToolsOpen(false); showToast('Clique no mapa para criar um ponto.', 'info'); } },
+              { key: 'measure' as const, label: 'Medir distância', icon: Ruler, action: () => { if (activeTool === 'measure') { setActiveTool('navigate'); setMeasurementPoints([]); } else { setActiveTool('measure'); setMeasurementPoints([]); showToast('Clique para medir distância.', 'info'); } setIsToolsOpen(false); } },
+              { key: 'polygon' as const, label: 'Demarcar área', icon: Hexagon, action: () => { if (activeTool === 'polygon') { setActiveTool('navigate'); setPolygonDraft([]); } else { setActiveTool('polygon'); setPolygonDraft([]); showToast('Clique nos vértices da área a demarcar.', 'info'); } setIsToolsOpen(false); } },
+            ].map(tool => {
+              const Icon = tool.icon;
+              const active = activeTool === tool.key;
+              return (
+                <button
+                  key={tool.key}
+                  onClick={tool.action}
+                  className={`mb-1 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-all duration-150 ${
+                    active ? 'bg-[#0F3E8C] text-white shadow-md' : 'text-gray-400 hover:bg-white/[0.08] hover:text-white'
+                  }`}
+                  title={tool.label}
+                >
+                  <Icon size={15} className={active ? 'text-[#F4B205] shrink-0' : 'shrink-0'} />
+                  <span className="text-xs font-medium truncate">{tool.label}</span>
+                </button>
+              );
+            })}
+
+            <div className="my-1.5 h-px bg-white/10 mx-1" />
+
+            <button
+              onClick={() => { toggle3DCamera(); }}
+              className={`mb-1 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-all duration-150 ${viewState.pitch > 20 ? 'bg-[#0F3E8C]/50 text-white' : 'text-gray-400 hover:bg-white/[0.08] hover:text-white'}`}
+              title="Alternar perspectiva 2D/3D"
+            >
+              <span className="w-[15px] text-center text-[11px] font-bold text-[#F4B205] shrink-0">{viewState.pitch > 20 ? '3D' : '2D'}</span>
+              <span className="text-xs font-medium">Perspectiva {viewState.pitch > 20 ? '3D' : '2D'}</span>
+            </button>
+
+            <button
+              onClick={() => { setViewState(prev => ({ ...prev, bearing: 0 })); setIsToolsOpen(false); showToast('Norte redefinido.', 'info'); }}
+              className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-gray-400 transition hover:bg-white/[0.08] hover:text-white"
+              title="Resetar norte"
+            >
+              <Compass size={15} className="shrink-0" style={{ transform: `rotate(${-viewState.bearing}deg)` }} />
+              <span className="text-xs font-medium">Resetar norte</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* =========================================================================
@@ -2212,21 +2277,30 @@ export default function HoloMapPlatform() {
       </div>
 
       {/* =========================================================================
-          PAINEL DO TERRITÓRIO DEMARCADO (COM SALVAR E EXPORTAR PDF DIRETO NELE!)
+          PAINEL DO TERRITÓRIO DEMARCADO
           ========================================================================= */}
       {activeTerritory && (
         <aside 
           style={uiZoomStyle}
-          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-[328px] md:top-[92px] md:w-96 max-h-[82vh] md:max-h-[calc(100vh-6.5rem)] liquid-glass rounded-2xl p-4 sm:p-5 border border-[#F4B205]/40 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto origin-bottom-left md:origin-top-left"
+          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-20 md:top-[92px] md:w-96 max-h-[82vh] md:max-h-[calc(100vh-6.5rem)] liquid-glass rounded-2xl p-4 sm:p-5 border border-[#F4B205]/40 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto origin-bottom-left md:origin-top-left"
         >
           <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
             <div className="flex items-center gap-2">
               <div className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: activeTerritory.cor }} />
               <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Território Demarcado</span>
             </div>
-            <button onClick={() => setActiveTerritory(null)} className="p-1 hover:bg-white/10 rounded-lg">
-              <X size={16} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleDeleteActiveTerritory}
+                className="p-1.5 hover:bg-red-500/20 text-red-400 rounded-lg transition"
+                title="Excluir Território"
+              >
+                <Trash2 size={15} />
+              </button>
+              <button onClick={() => setActiveTerritory(null)} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition">
+                <X size={16} />
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto custom-scrollbar py-4 space-y-4">
@@ -2235,7 +2309,11 @@ export default function HoloMapPlatform() {
               <input
                 type="text"
                 value={activeTerritory.nome}
-                onChange={e => setActiveTerritory({ ...activeTerritory, nome: e.target.value })}
+                onChange={e => {
+                  const updated = { ...activeTerritory, nome: e.target.value };
+                  setActiveTerritory(updated);
+                  setDemarcatedTerritories(prev => prev.map(t => t.id === activeTerritory.id ? updated : t));
+                }}
                 className="w-full bg-white/10 rounded-xl px-3 py-2 text-sm font-bold border border-white/15 outline-none focus:border-[#F4B205]"
               />
             </div>
@@ -2249,7 +2327,11 @@ export default function HoloMapPlatform() {
                 <input
                   type="color"
                   value={activeTerritory.cor}
-                  onChange={e => setActiveTerritory({ ...activeTerritory, cor: e.target.value })}
+                  onChange={e => {
+                    const updated = { ...activeTerritory, cor: e.target.value };
+                    setActiveTerritory(updated);
+                    setDemarcatedTerritories(prev => prev.map(t => t.id === activeTerritory.id ? updated : t));
+                  }}
                   className="w-8 h-8 rounded-xl bg-transparent cursor-pointer border border-white/20"
                 />
                 <div className="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-black/20 border border-white/10">
@@ -2257,7 +2339,11 @@ export default function HoloMapPlatform() {
                     <button
                       key={preset.hex}
                       type="button"
-                      onClick={() => setActiveTerritory({ ...activeTerritory, cor: preset.hex })}
+                      onClick={() => {
+                        const updated = { ...activeTerritory, cor: preset.hex };
+                        setActiveTerritory(updated);
+                        setDemarcatedTerritories(prev => prev.map(t => t.id === activeTerritory.id ? updated : t));
+                      }}
                       className={`w-5 h-5 rounded-full transition-transform hover:scale-125 border ${
                         activeTerritory.cor === preset.hex ? 'ring-2 ring-white scale-110 border-white' : 'border-black/30'
                       }`}
@@ -2295,7 +2381,11 @@ export default function HoloMapPlatform() {
               <label className="text-[10px] uppercase font-bold tracking-wider opacity-50 block mb-1">Descrição / Parecer Técnico</label>
               <textarea
                 value={activeTerritory.descricao || ''}
-                onChange={e => setActiveTerritory({ ...activeTerritory, descricao: e.target.value })}
+                onChange={e => {
+                  const updated = { ...activeTerritory, descricao: e.target.value };
+                  setActiveTerritory(updated);
+                  setDemarcatedTerritories(prev => prev.map(t => t.id === activeTerritory.id ? updated : t));
+                }}
                 rows={3}
                 placeholder="Parecer técnico ou histórico do território..."
                 className="w-full bg-white/10 rounded-xl p-3 text-xs border border-white/10 outline-none resize-none custom-scrollbar"
@@ -2317,31 +2407,13 @@ export default function HoloMapPlatform() {
             </div>
           </div>
 
-          <div className="pt-3 border-t border-white/10 shrink-0 space-y-2">
-            <div className="flex gap-2">
-              <button
-                onClick={handleSaveActiveTerritory}
-                className="flex-1 py-3 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#0F3E8C] hover:bg-[#1E4DB7] text-white border border-[#F4B205]/40 transition-all duration-300 shadow-lg flex items-center justify-center gap-1.5 active:scale-90 hover-lift btn-ripple"
-              >
-                <Save size={15} />
-                <span>Salvar Território</span>
-              </button>
-
-              <button
-                onClick={handleDeleteActiveTerritory}
-                className="p-3 rounded-xl text-xs bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all duration-300 hover:scale-110 active:scale-90"
-                title="Excluir Território"
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-
+          <div className="pt-3 border-t border-white/10 shrink-0">
             <button
               onClick={() => handleExportTerritoryPDF(activeTerritory)}
-              className="w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider liquid-glass border border-white/20 hover:bg-white/10 text-white transition-all duration-300 flex items-center justify-center gap-2 active:scale-90 hover-lift btn-ripple"
+              className="w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#0F3E8C] hover:bg-[#1E4DB7] text-white border border-[#F4B205]/40 transition-all duration-300 flex items-center justify-center gap-2 active:scale-90 shadow-md hover-lift btn-ripple"
             >
               <Download size={14} className="text-[#F4B205]" />
-              <span>Exportar PDF deste Território (Marca d'Água)</span>
+              <span>Exportar em PDF</span>
             </button>
           </div>
         </aside>
@@ -2351,16 +2423,25 @@ export default function HoloMapPlatform() {
       {selectedPoint && (
         <aside 
           style={uiZoomStyle}
-          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-[328px] md:top-[92px] md:w-96 max-h-[82vh] md:max-h-[calc(100vh-6.5rem)] liquid-glass rounded-2xl p-4 sm:p-5 border border-[#F4B205]/40 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto origin-bottom-left md:origin-top-left"
+          className="ui-scale-target fixed md:absolute bottom-16 md:bottom-4 inset-x-2 md:inset-x-auto md:left-20 md:top-[92px] md:w-96 max-h-[82vh] md:max-h-[calc(100vh-6.5rem)] liquid-glass rounded-2xl p-4 sm:p-5 border border-[#F4B205]/40 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-left-4 duration-300 pointer-events-auto origin-bottom-left md:origin-top-left"
         >
           <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
             <div className="flex items-center gap-2">
               <MapPin size={16} className="text-[#F4B205]" />
               <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Ponto Marcado</span>
             </div>
-            <button onClick={() => setSelectedPoint(null)} className="p-1 hover:bg-white/10 rounded-lg">
-              <X size={16} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button 
+                onClick={() => handleDeleteActivePoint()} 
+                className="p-1.5 hover:bg-red-500/20 text-red-400 rounded-lg transition" 
+                title="Excluir Ponto"
+              >
+                <Trash2 size={15} />
+              </button>
+              <button onClick={() => setSelectedPoint(null)} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition">
+                <X size={16} />
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto custom-scrollbar py-4 space-y-3.5">
@@ -2462,31 +2543,13 @@ export default function HoloMapPlatform() {
             )}
           </div>
 
-          <div className="pt-3 border-t border-white/10 shrink-0 space-y-2">
-            <div className="flex gap-2">
-              <button
-                onClick={handleSaveActivePoint}
-                className="flex-1 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#0F3E8C] hover:bg-[#1E4DB7] text-white border border-[#F4B205]/40 transition-all duration-300 shadow-md active:scale-90 flex items-center justify-center gap-1.5 hover-lift btn-ripple"
-              >
-                <Save size={15} />
-                <span>Salvar Ponto</span>
-              </button>
-
-              <button
-                onClick={() => handleDeleteActivePoint()}
-                className="p-2.5 rounded-xl text-xs bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all duration-300 hover:scale-110 active:scale-90"
-                title="Excluir Ponto"
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-
+          <div className="pt-3 border-t border-white/10 shrink-0">
             <button
               onClick={() => handleExportPointPDF(selectedPoint)}
-              className="w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wider liquid-glass border border-white/20 hover:bg-white/10 text-white transition-all duration-300 flex items-center justify-center gap-2 active:scale-90 hover-lift btn-ripple"
+              className="w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#0F3E8C] hover:bg-[#1E4DB7] text-white border border-[#F4B205]/40 transition-all duration-300 flex items-center justify-center gap-2 active:scale-90 shadow-md hover-lift btn-ripple"
             >
               <Download size={14} className="text-[#F4B205]" />
-              <span>Exportar PDF deste Ponto (Marca d'Água)</span>
+              <span>Exportar em PDF</span>
             </button>
           </div>
         </aside>
@@ -2836,8 +2899,8 @@ export default function HoloMapPlatform() {
                   onClick={triggerNativePrint}
                   className="px-5 py-2.5 rounded-xl text-xs font-bold bg-[#0F3E8C] hover:bg-[#1E4DB7] text-white border border-[#F4B205]/40 transition-all duration-300 shadow-md active:scale-90 flex items-center justify-center gap-2 flex-1 sm:flex-initial hover-lift btn-ripple"
                 >
-                  <Printer size={16} />
-                  <span>Imprimir / Salvar em PDF</span>
+                  <Download size={16} className="text-[#F4B205]" />
+                  <span>Exportar em PDF</span>
                 </button>
               </div>
             </div>
