@@ -459,7 +459,9 @@ export default function HoloMapPlatform() {
 
   const importedCoordinates = useMemo(() => getImportedCoordinates(), [getImportedCoordinates]);
   const importedCoordinateByRow = useMemo(
-    () => new Map(importedCoordinates.map(item => [item.index, item])),
+    // "Map" também é o componente importado do react-map-gl; usar globalThis
+    // garante que este índice use o construtor nativo durante o prerender.
+    () => new globalThis.Map(importedCoordinates.map(item => [item.index, item])),
     [importedCoordinates]
   );
 
