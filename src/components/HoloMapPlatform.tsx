@@ -174,8 +174,8 @@ function parseCoord(val: any): number {
     return dd;
   }
 
-  // Hemisfério no final: "9.17S" → -9.17
-  const hemSuffix = str.match(/^(-?[0-9]+[.,][0-9]+)\s*([NSEWSOosweEW])$/i);
+  // Hemisfério no final: "9.17S" ou "9S" → negativo
+  const hemSuffix = str.match(/^(-?[0-9]+(?:[.,][0-9]+)?)\s*([NSEWSOosweEW])$/i);
   if (hemSuffix) {
     const num = parseFloat(hemSuffix[1].replace(',', '.'));
     const hem = hemSuffix[2].toUpperCase();
@@ -227,6 +227,36 @@ function utmToWgs84(easting: number, northing: number, zone: number, hemisphere:
   return Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 ? [longitude, latitude] : null;
 }
 
+// Corrige colunas invertidas (comum em planilhas brasileiras: lng na coluna "Latitude")
+function normalizeLatLng(lat: number, lng: number): [number, number] | null {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  let la = lat;
+  let ln = lng;
+  if (Math.abs(la) > 90 && Math.abs(ln) <= 90) [la, ln] = [ln, la];
+  else if (Math.abs(la) > 35 && Math.abs(ln) <= 35 && Math.abs(la) <= 180) [la, ln] = [ln, la];
+  if (Math.abs(la) <= 90 && Math.abs(ln) <= 180) return [ln, la];
+  return null;
+}
+
+// Parser unificado: decimal, DMS, hemisfério e pares "-9.17, -36.06"
+function parseCoordinatePair(input: string): [number, number] | null {
+  const raw = String(input ?? '').trim().replace(/^\uFEFF/, '').replace(/[()]/g, '');
+  if (!raw) return null;
+
+  const parts = raw.split(/[,;|/]\s*|\s+(?=[-+]\d)/).map(p => p.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    const normalized = normalizeLatLng(parseCoord(parts[0]), parseCoord(parts[1]));
+    if (normalized) return normalized;
+  }
+
+  const match = raw.match(/^([-+]?\d{1,3}(?:[.,]\d+)?)(?:\s*;\s*|\s{1,}|\s*,\s*(?=[-+]))([-+]?\d{1,3}(?:[.,]\d+)?)$/);
+  if (match) {
+    return normalizeLatLng(parseFloat(match[1].replace(',', '.')), parseFloat(match[2].replace(',', '.')));
+  }
+
+  return null;
+}
+
 
 export default function HoloMapPlatform() {
   const mapRef = useRef<MapRef>(null);
@@ -246,6 +276,7 @@ export default function HoloMapPlatform() {
   const [territoriesListTab, setTerritoriesListTab] = useState<'territories' | 'points'>('territories');
   const [workspaceTab, setWorkspaceTab] = useState<'data' | 'layers'>('data');
   const [workspaceQuery, setWorkspaceQuery] = useState('');
+  const [showMobileWorkspace, setShowMobileWorkspace] = useState(false);
 
   // Modos de ferramentas
   const [activeTool, setActiveTool] = useState<'navigate' | 'point' | 'measure' | 'polygon'>('navigate');
@@ -292,6 +323,7 @@ export default function HoloMapPlatform() {
   const [coordinateReference, setCoordinateReference] = useState<CoordinateReference>('geographic');
   const [utmZone, setUtmZone] = useState('24');
   const [utmHemisphere, setUtmHemisphere] = useState<'N' | 'S'>('S');
+  const [importMode, setImportMode] = useState<'points' | 'territory'>('points');
   const [isHydrated, setIsHydrated] = useState(false);
 
   // Toast e Processamento
@@ -407,33 +439,14 @@ export default function HoloMapPlatform() {
       : 'mapbox://styles/mapbox/dark-v11';
   }, [activeLayers, theme]);
 
-  // Parser inteligente de coordenadas geográficas
-  const parseCoordinates = (input: string): [number, number] | null => {
-    const clean = input.trim().replace(/[()]/g, '');
-    // Aceita "-9.17, -36.06", "-9,17; -36,06" e pares separados por espaço.
-    const match = clean.match(/^([-+]?\d{1,2}(?:[.,]\d+)?)(?:\s*;\s*|\s{1,}|\s*,\s*(?=[-+]))([-+]?\d{1,3}(?:[.,]\d+)?)$/);
-    if (match) {
-      let lat = parseFloat(match[1].replace(',', '.'));
-      let lng = parseFloat(match[2].replace(',', '.'));
-      // Se o usuário digitou [lng, lat] (ex: -36.06, -9.17), corrigir automaticamente
-      if (Math.abs(lat) > 35 && Math.abs(lng) <= 35) {
-        const temp = lat;
-        lat = lng;
-        lng = temp;
-      }
-      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-        return [lng, lat]; // [longitude, latitude] para o Mapbox
-      }
-    }
-    return null;
-  };
+  const parseCoordinates = (input: string): [number, number] | null => parseCoordinatePair(input);
 
   const getImportedCoordinates = useCallback((): ImportedCoordinate[] => {
     if (!parsedSpreadsheet || (!coordinateColumn && (!latColumn || !lngColumn))) return [];
     const zone = Number.parseInt(utmZone, 10);
     return parsedSpreadsheet.rows.reduce<ImportedCoordinate[]>((valid, row, index) => {
       if (coordinateColumn) {
-        const parsed = parseCoordinates(String(row[coordinateColumn] ?? ''));
+        const parsed = parseCoordinatePair(String(row[coordinateColumn] ?? ''));
         if (parsed) valid.push({ lng: parsed[0], lat: parsed[1], row, index });
         return valid;
       }
@@ -445,13 +458,7 @@ export default function HoloMapPlatform() {
         // No mapeamento UTM, Latitude recebe Norte (Y) e Longitude recebe Leste (X).
         coordinate = utmToWgs84(second, first, zone, utmHemisphere);
       } else {
-        let lat = first;
-        let lng = second;
-        // Corrige planilhas em que as duas colunas foram invertidas.
-        if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) [lat, lng] = [lng, lat];
-        coordinate = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180
-          ? [lng, lat]
-          : null;
+        coordinate = normalizeLatLng(first, second);
       }
 
       if (coordinate) valid.push({ lng: coordinate[0], lat: coordinate[1], row, index });
@@ -621,7 +628,10 @@ export default function HoloMapPlatform() {
     }
 
     // 2. Busca local instantânea nos territórios demarcados e pontos culturais
-    const localTerritories = demarcatedTerritories.filter(t => 
+    const includeTerritories = searchCategoryFilter === 'all' || searchCategoryFilter === 'territories';
+    const includePoints = searchCategoryFilter === 'all' || searchCategoryFilter === 'points';
+
+    const localTerritories = includeTerritories ? demarcatedTerritories.filter(t => 
       t.nome.toLowerCase().includes(q) || (t.descricao && t.descricao.toLowerCase().includes(q))
     ).map(t => {
       const lats = t.pontos.map(p => p[1]);
@@ -634,9 +644,9 @@ export default function HoloMapPlatform() {
         isTerritory: true,
         territoryData: t
       };
-    });
+    }) : [];
 
-    const localPoints = objetos.filter(o => {
+    const localPoints = includePoints ? objetos.filter(o => {
       const indexedText = [o.titulo, o.objeto, o.autor, o.anotacoes, ...Object.values(o.extraProps || {})]
         .filter(Boolean)
         .join(' ')
@@ -649,12 +659,19 @@ export default function HoloMapPlatform() {
       center: [o.longitude, o.latitude] as [number, number],
       isPoint: true,
       pointData: o
-    }));
+    })) : [];
 
     // Se houver dados locais demarcados, exibe na hora
     if (localTerritories.length > 0 || localPoints.length > 0) {
       setSearchSuggestions([...localTerritories, ...localPoints]);
       setShowSearchDropdown(true);
+    } else if (searchCategoryFilter !== 'all' && searchCategoryFilter !== 'coords') {
+      setSearchSuggestions([]);
+    }
+
+    if (searchCategoryFilter === 'coords') {
+      setIsSearching(false);
+      return;
     }
 
     setIsSearching(true);
@@ -981,7 +998,11 @@ export default function HoloMapPlatform() {
       ];
 
       const findCol = (aliases: string[]) =>
-        lowerHeaders.find(h => aliases.some(a => h.clean === a || h.clean.includes(a)));
+        lowerHeaders.find(h => aliases.some(a => h.clean === a)) ||
+        lowerHeaders.find(h => aliases.some(a => {
+          const words = h.clean.split(/\s+/);
+          return words.includes(a) || h.clean.startsWith(`${a} `) || h.clean.endsWith(` ${a}`);
+        }));
 
       const foundLat = findCol(LAT_ALIASES);
       const foundLng = findCol(LNG_ALIASES);
@@ -992,16 +1013,14 @@ export default function HoloMapPlatform() {
       const looksLikeUtm = /\b(utm|northing|easting)\b/i.test(headers.join(' '));
 
       if (foundLat) setLatColumn(foundLat.orig);
-      else if (headers.length > 0) setLatColumn(headers[0]);
-
       if (foundLng) setLngColumn(foundLng.orig);
-      else if (headers.length > 1) setLngColumn(headers[1]);
 
       if (foundTitle) setTitleColumn(foundTitle.orig);
       if (foundCat) setCategoryColumn(foundCat.orig);
       if (foundDesc) setDescColumn(foundDesc.orig);
       if (foundPair && !looksLikeUtm) setCoordinateColumn(foundPair.orig);
       if (looksLikeUtm) setCoordinateReference('utm');
+      setImportMode('points');
     };
 
     if (isExcel) {
@@ -1069,10 +1088,10 @@ export default function HoloMapPlatform() {
   };
 
 
-  // Aplicar Planilha como Território ou Pontos
-  const applySpreadsheet = (asTerritory: boolean = true) => {
+  // Aplicar Planilha como Pontos ou Território (sem duplicar marcadores)
+  const applySpreadsheet = () => {
     if (!parsedSpreadsheet || (!coordinateColumn && (!latColumn || !lngColumn))) {
-      showToast('Selecione Latitude/Longitude ou uma coluna com o par de coordenadas.', 'error');
+      showToast('Selecione as colunas de Latitude e Longitude (ou uma coluna com o par de coordenadas).', 'error');
       return;
     }
 
@@ -1100,17 +1119,18 @@ export default function HoloMapPlatform() {
     const validCoords = validRows.map(({ lng, lat }) => [lng, lat] as [number, number]);
 
     if (mappedPoints.length === 0) {
-      showToast('Nenhuma coordenada válida encontrada. Verifique as colunas de Latitude e Longitude.', 'error');
+      showToast('Nenhuma coordenada válida. Verifique o mapeamento das colunas e o formato (ex: -9.17, -36.06).', 'error');
       return;
     }
-
-    setObjetos(prev => [...mappedPoints, ...prev]);
 
     const baseDesc = sheetAnnotation
       ? `${sheetAnnotation}\n\nFonte: ${parsedSpreadsheet.fileName} (${validCoords.length} pontos).`
       : `Importado de: ${parsedSpreadsheet.fileName} (${validCoords.length} pontos).`;
 
-    if (asTerritory && validCoords.length >= 3) {
+    if (importMode === 'points') {
+      setObjetos(prev => [...mappedPoints, ...prev]);
+      showToast(`✅ ${mappedPoints.length} pontos demarcados no mapa com anotações.`);
+    } else if (validCoords.length >= 3) {
       const areaM2 = calculatePolygonArea(validCoords);
       const perimetroKm = calculatePerimeter(validCoords);
       const newTerritory: DemarcatedTerritory = {
@@ -1128,15 +1148,13 @@ export default function HoloMapPlatform() {
       };
       setDemarcatedTerritories(prev => [newTerritory, ...prev]);
       setActiveTerritory(newTerritory);
-      showToast(`✅ ${mappedPoints.length} pontos demarcados como território — ${newTerritory.areaHectares} ha`);
-    } else if (!asTerritory) {
-      showToast(`✅ ${mappedPoints.length} pontos demarcados no mapa!`);
+      showToast(`✅ Polígono criado — ${newTerritory.areaHectares} ha · ${validCoords.length} vértices`);
     } else {
-      showToast(`✅ ${mappedPoints.length} pontos adicionados (mínimo 3 pontos para formar território).`);
+      showToast('Para criar um polígono, são necessários pelo menos 3 coordenadas válidas.', 'error');
+      return;
     }
 
     fitMapToCoordinates(validCoords);
-
     setActiveModal(null);
   };
 
@@ -1232,7 +1250,7 @@ export default function HoloMapPlatform() {
   const pointsGeoJSON = useMemo(() => ({
     type: 'FeatureCollection' as const,
     features: objetos
-      .filter(obj => Number.isFinite(obj.latitude) && Number.isFinite(obj.longitude) && obj.latitude !== 0 && obj.longitude !== 0)
+      .filter(obj => Number.isFinite(obj.latitude) && Number.isFinite(obj.longitude))
       .map(obj => ({
         type: 'Feature' as const,
         properties: { id: obj.id, title: obj.titulo, category: obj.objeto || 'Ponto' },
@@ -1594,6 +1612,30 @@ export default function HoloMapPlatform() {
               ) : (
                 /* QUANDO O USUÁRIO DIGITOU: RESULTADOS DE BUSCA */
                 <div id="map-search-results" role="listbox">
+                  <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar border-b border-white/10 px-3 py-2">
+                    {([
+                      { key: 'all', label: 'Tudo' },
+                      { key: 'territories', label: 'Territórios' },
+                      { key: 'points', label: 'Pontos' },
+                      { key: 'coords', label: 'GPS' },
+                    ] as const).map(chip => (
+                      <button
+                        key={chip.key}
+                        type="button"
+                        onClick={() => {
+                          setSearchCategoryFilter(chip.key);
+                          handleSearchInput(searchQuery);
+                        }}
+                        className={`shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-bold transition ${
+                          searchCategoryFilter === chip.key
+                            ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/40'
+                            : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                        }`}
+                      >
+                        {chip.label}
+                      </button>
+                    ))}
+                  </div>
                   {searchSuggestions.length === 0 && !isSearching ? (
                     <div className="p-6 text-center opacity-70">
                       <Search size={28} className="mx-auto mb-2 opacity-40 text-[#F4B205]" />
@@ -1656,154 +1698,316 @@ export default function HoloMapPlatform() {
       {/* PAINEL DE TRABALHO: dados e camadas ficam sempre visíveis no desktop. */}
       <aside
         style={uiZoomStyle}
-        className="hidden md:flex ui-scale-target fixed left-4 top-[5.75rem] bottom-4 z-40 w-[304px] flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#101317]/94 shadow-[0_18px_55px_rgba(0,0,0,0.38)] backdrop-blur-xl pointer-events-auto origin-top-left"
+        className="hidden md:flex ui-scale-target fixed left-4 top-[5.75rem] bottom-4 z-40 w-[288px] flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#101317]/94 shadow-[0_18px_55px_rgba(0,0,0,0.38)] backdrop-blur-xl pointer-events-auto origin-top-left"
       >
-        <div className="border-b border-white/10 px-4 pt-4">
-          <div className="mb-4 flex items-start justify-between gap-3">
+        {/* Cabeçalho */}
+        <div className="border-b border-white/10 px-4 pt-3.5 pb-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#F4B205]">Espaço de trabalho</p>
-              <h2 className="mt-1 text-sm font-semibold text-white">Projeto territorial</h2>
+              <h2 className="mt-0.5 text-sm font-semibold text-white leading-tight">Projeto territorial</h2>
             </div>
-            <button onClick={() => setActiveModal('settings')} className="rounded-lg p-2 text-gray-400 transition hover:bg-white/10 hover:text-white" title="Configurações">
-              <Settings size={16} />
+            <button onClick={() => setActiveModal('settings')} className="rounded-lg p-1.5 text-gray-500 transition hover:bg-white/10 hover:text-white" title="Configurações">
+              <Settings size={15} />
             </button>
           </div>
           <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/20 p-1">
-            <button onClick={() => setWorkspaceTab('data')} className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${workspaceTab === 'data' ? 'bg-[#0F3E8C] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Dados</button>
-            <button onClick={() => setWorkspaceTab('layers')} className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${workspaceTab === 'layers' ? 'bg-[#0F3E8C] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Camadas</button>
+            <button onClick={() => setWorkspaceTab('data')} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${workspaceTab === 'data' ? 'bg-[#0F3E8C] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Dados</button>
+            <button onClick={() => setWorkspaceTab('layers')} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${workspaceTab === 'layers' ? 'bg-[#0F3E8C] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Camadas</button>
           </div>
         </div>
 
         {workspaceTab === 'data' ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 custom-scrollbar">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 custom-scrollbar">
+            {/* Importar planilha */}
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isProcessing}
-              className="flex w-full items-center justify-between rounded-xl bg-[#F4B205] px-3.5 py-3 text-left text-[#0F3E8C] shadow-lg transition hover:bg-[#fbc337] disabled:opacity-60"
+              className="flex w-full items-center gap-2.5 rounded-xl bg-gradient-to-r from-[#F4B205] to-[#F57602] px-3.5 py-2.5 text-left text-[#0F3E8C] shadow-lg transition hover:brightness-110 disabled:opacity-60"
             >
-              <span className="flex items-center gap-2 text-xs font-bold"><Upload size={16} /> Importar planilha</span>
-              <span className="text-[10px] font-bold opacity-75">CSV · XLSX</span>
+              {isProcessing ? (
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[#0F3E8C] border-t-transparent shrink-0" />
+              ) : (
+                <FileSpreadsheet size={15} className="shrink-0" />
+              )}
+              <div className="min-w-0">
+                <span className="block text-xs font-bold">{isProcessing ? 'Processando...' : 'Importar planilha'}</span>
+                <span className="block text-[10px] font-medium opacity-75">CSV · XLSX · pontos no mapa</span>
+              </div>
             </button>
             <input ref={fileInputRef} type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" className="hidden" onChange={handleSpreadsheetUpload} disabled={isProcessing} />
 
+            {/* Estatísticas compactas */}
             <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => { setTerritoriesListTab('points'); setActiveModal('territories_list'); }} className="rounded-xl border border-white/10 bg-white/[0.035] p-3 text-left transition hover:border-[#F4B205]/45 hover:bg-white/[0.07]">
-                <div className="mb-2 flex items-center justify-between text-[#F4B205]"><MapPin size={16} /><Eye size={14} /></div>
-                <p className="text-lg font-bold text-white">{objetos.length}</p>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Pontos</p>
+              <button onClick={() => { setTerritoriesListTab('points'); setActiveModal('territories_list'); }} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2.5 text-left transition hover:border-[#F4B205]/45 hover:bg-white/[0.07]">
+                <div className="flex items-center gap-1.5 mb-1"><MapPin size={13} className="text-[#F4B205]" /><span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Pontos</span></div>
+                <p className="text-xl font-bold text-white leading-none">{objetos.length}</p>
               </button>
-              <button onClick={() => { setTerritoriesListTab('territories'); setActiveModal('territories_list'); }} className="rounded-xl border border-white/10 bg-white/[0.035] p-3 text-left transition hover:border-[#F4B205]/45 hover:bg-white/[0.07]">
-                <div className="mb-2 flex items-center justify-between text-[#F4B205]"><Hexagon size={16} /><Eye size={14} /></div>
-                <p className="text-lg font-bold text-white">{demarcatedTerritories.length}</p>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Territórios</p>
+              <button onClick={() => { setTerritoriesListTab('territories'); setActiveModal('territories_list'); }} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2.5 text-left transition hover:border-[#F4B205]/45 hover:bg-white/[0.07]">
+                <div className="flex items-center gap-1.5 mb-1"><Hexagon size={13} className="text-[#F4B205]" /><span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Territórios</span></div>
+                <p className="text-xl font-bold text-white leading-none">{demarcatedTerritories.length}</p>
               </button>
             </div>
 
-            <div>
-              <div className="mb-2 flex items-center justify-between">
+            {/* Lista unificada com busca */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
                 <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Registros no mapa</p>
                 <button onClick={() => setActiveModal('territories_list')} className="text-[11px] font-semibold text-[#F4B205] hover:text-[#fbc337]">Ver todos</button>
               </div>
-              <div className="relative mb-2">
-                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                <input value={workspaceQuery} onChange={event => setWorkspaceQuery(event.target.value)} placeholder="Filtrar pontos e anotações" className="w-full rounded-lg border border-white/10 bg-black/20 py-2 pl-9 pr-3 text-xs text-white outline-none placeholder:text-gray-600 focus:border-[#F4B205]/60" />
+              <div className="relative">
+                <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                <input value={workspaceQuery} onChange={event => setWorkspaceQuery(event.target.value)} placeholder="Filtrar registros…" className="w-full rounded-lg border border-white/10 bg-black/20 py-1.5 pl-8 pr-3 text-xs text-white outline-none placeholder:text-gray-600 focus:border-[#F4B205]/60" />
               </div>
-              <div className="space-y-1.5">
-                {visibleWorkspacePoints.length ? visibleWorkspacePoints.map(point => (
+              <div className="space-y-1">
+                {visibleWorkspacePoints.map(point => (
                   <button key={point.id} onClick={() => focusPoint(point)} className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition ${selectedPoint?.id === point.id ? 'border-[#F4B205]/55 bg-[#0F3E8C]/35' : 'border-transparent bg-white/[0.035] hover:border-white/10 hover:bg-white/[0.07]'}`}>
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#0F3E8C]/45 text-[#F4B205]"><MapPin size={13} /></span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-gray-100">{point.titulo}</span><span className="block truncate text-[10px] text-gray-500">{point.objeto || point.datasetName || 'Ponto georreferenciado'}</span></span>
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#0F3E8C]/45 text-[#F4B205]"><MapPin size={12} /></span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-gray-100">{point.titulo}</span><span className="block truncate text-[10px] text-gray-500">{point.objeto || point.datasetName || 'Georreferenciado'}</span></span>
                   </button>
-                )) : <div className="rounded-lg border border-dashed border-white/10 p-4 text-center text-xs text-gray-500">Nenhum ponto encontrado.</div>}
+                ))}
+                {(!workspaceQuery.trim() ? demarcatedTerritories.slice(0, 3) : demarcatedTerritories.filter(t => t.nome.toLowerCase().includes(workspaceQuery.toLowerCase())).slice(0, 3)).map(territory => (
+                  <button key={territory.id} onClick={() => focusTerritory(territory)} className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition ${activeTerritory?.id === territory.id ? 'border-[#F4B205]/55 bg-[#0F3E8C]/35' : 'border-transparent bg-white/[0.035] hover:border-white/10 hover:bg-white/[0.07]'}`}>
+                    <span className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center" style={{ backgroundColor: territory.cor + '33', border: `1.5px solid ${territory.cor}66` }}><span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: territory.cor }} /></span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-gray-100">{territory.nome}</span><span className="text-[10px] text-gray-500">{territory.areaHectares.toLocaleString('pt-BR')} ha · {territory.pontos.length} vértices</span></span>
+                  </button>
+                ))}
+                {!visibleWorkspacePoints.length && !demarcatedTerritories.length && (
+                  <div className="rounded-lg border border-dashed border-white/10 p-4 text-center text-xs text-gray-500">Nenhum registro no mapa.</div>
+                )}
               </div>
             </div>
 
-            {demarcatedTerritories.length > 0 && (
+            {/* Datasets importados – compacto */}
+            {projectDatasets.length > 0 && (
               <div>
-                <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Territórios</p>
-                <div className="space-y-1.5">
-                  {demarcatedTerritories.slice(0, 4).map(territory => (
-                    <button key={territory.id} onClick={() => focusTerritory(territory)} className="flex w-full items-center gap-2 rounded-lg border border-transparent bg-white/[0.035] px-2.5 py-2 text-left transition hover:border-white/10 hover:bg-white/[0.07]">
-                      <span className="h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: territory.cor }} />
-                      <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-gray-100">{territory.nome}</span><span className="text-[10px] text-gray-500">{territory.areaHectares.toLocaleString('pt-BR')} ha · {territory.pontos.length} vértices</span></span>
-                    </button>
-                  ))}
-                </div>
+                <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Conjuntos importados</p>
+                <div className="flex flex-wrap gap-1">{projectDatasets.map(dataset => <span key={dataset.name} className="max-w-full truncate rounded-md border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] text-gray-400" title={dataset.name}>{dataset.name} · {dataset.count}</span>)}</div>
               </div>
             )}
-
-            {projectDatasets.length > 0 && <div>
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Conjuntos importados</p>
-              <div className="flex flex-wrap gap-1.5">{projectDatasets.map(dataset => <span key={dataset.name} className="max-w-full truncate rounded-md border border-white/10 bg-black/20 px-2 py-1 text-[10px] text-gray-400" title={dataset.name}>{dataset.name} · {dataset.count}</span>)}</div>
-            </div>}
           </div>
         ) : (
-          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 custom-scrollbar">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 custom-scrollbar">
+            {/* Mapa base */}
             <div>
               <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Mapa base</p>
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setActiveLayers(prev => prev.filter(layer => layer !== 'satellite'))} className={`rounded-xl border p-3 text-left text-xs font-semibold transition ${!activeLayers.includes('satellite') ? 'border-[#F4B205]/60 bg-[#0F3E8C]/35 text-white' : 'border-white/10 bg-white/[0.035] text-gray-400 hover:bg-white/[0.07]'}`}><Globe size={17} className="mb-2 text-[#F4B205]" />Mapa vetorial</button>
-                <button onClick={() => setActiveLayers(prev => prev.includes('satellite') ? prev : [...prev, 'satellite'])} className={`rounded-xl border p-3 text-left text-xs font-semibold transition ${activeLayers.includes('satellite') ? 'border-[#F4B205]/60 bg-[#0F3E8C]/35 text-white' : 'border-white/10 bg-white/[0.035] text-gray-400 hover:bg-white/[0.07]'}`}><Mountain size={17} className="mb-2 text-[#F4B205]" />Satélite</button>
+                <button onClick={() => setActiveLayers(prev => prev.filter(layer => layer !== 'satellite'))} className={`rounded-xl border p-3 text-left text-xs font-semibold transition ${!activeLayers.includes('satellite') ? 'border-[#F4B205]/60 bg-[#0F3E8C]/35 text-white' : 'border-white/10 bg-white/[0.035] text-gray-400 hover:bg-white/[0.07]'}`}><Globe size={16} className="mb-2 text-[#F4B205]" />Vetorial</button>
+                <button onClick={() => setActiveLayers(prev => prev.includes('satellite') ? prev.filter(l => l !== 'satellite') : [...prev, 'satellite'])} className={`rounded-xl border p-3 text-left text-xs font-semibold transition ${activeLayers.includes('satellite') ? 'border-[#F4B205]/60 bg-[#0F3E8C]/35 text-white' : 'border-white/10 bg-white/[0.035] text-gray-400 hover:bg-white/[0.07]'}`}><Mountain size={16} className="mb-2 text-[#F4B205]" />Satélite</button>
               </div>
             </div>
+
+            {/* Dados visíveis */}
             <div>
               <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Dados do projeto</p>
               <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.035]">
-                {[{ key: 'markers', label: 'Pontos georreferenciados', icon: MapPin, count: objetos.length }, { key: 'territories', label: 'Territórios demarcados', icon: Hexagon, count: demarcatedTerritories.length }].map(item => {
+                {[
+                  { key: 'markers', label: 'Pontos', icon: MapPin, count: objetos.length },
+                  { key: 'territories', label: 'Territórios', icon: Hexagon, count: demarcatedTerritories.length }
+                ].map(item => {
                   const Icon = item.icon;
                   const enabled = activeLayers.includes(item.key);
-                  return <button key={item.key} onClick={() => toggleLayer(item.key)} className="flex w-full items-center gap-3 border-b border-white/10 px-3 py-3 text-left last:border-0 hover:bg-white/[0.045]">
-                    <Icon size={16} className="text-[#F4B205]" /><span className="flex-1 text-xs font-medium text-gray-200">{item.label}<span className="ml-1.5 text-[10px] text-gray-500">({item.count})</span></span><span className={`relative h-5 w-9 rounded-full transition ${enabled ? 'bg-[#0F3E8C]' : 'bg-white/15'}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition ${enabled ? 'left-[18px]' : 'left-0.5'}`} /></span>
-                  </button>;
+                  return (
+                    <button key={item.key} onClick={() => toggleLayer(item.key)} className="flex w-full items-center gap-3 border-b border-white/10 px-3 py-2.5 text-left last:border-0 hover:bg-white/[0.045]">
+                      <Icon size={15} className="text-[#F4B205] shrink-0" />
+                      <span className="flex-1 text-xs font-medium text-gray-200">{item.label}<span className="ml-1.5 text-[10px] text-gray-500">({item.count})</span></span>
+                      <span className={`relative h-5 w-9 rounded-full transition ${enabled ? 'bg-[#0F3E8C]' : 'bg-white/15'}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition ${enabled ? 'left-[18px]' : 'left-0.5'}`} /></span>
+                    </button>
+                  );
                 })}
               </div>
             </div>
+
+            {/* Visualização 3D */}
             <div>
               <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Visualização</p>
-              <div className="space-y-1 overflow-hidden rounded-xl border border-white/10 bg-white/[0.035]">
-                {[{ key: 'relevo', label: 'Relevo 3D', icon: Mountain }, { key: 'buildings', label: 'Edificações 3D', icon: Building2 }, { key: 'atmosphere', label: 'Atmosfera', icon: CloudSun }].map(item => {
+              <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.035]">
+                {[
+                  { key: 'relevo', label: 'Relevo 3D', icon: Mountain },
+                  { key: 'buildings', label: 'Edificações 3D', icon: Building2 },
+                  { key: 'atmosphere', label: 'Atmosfera', icon: CloudSun }
+                ].map(item => {
                   const Icon = item.icon;
                   const enabled = activeLayers.includes(item.key);
-                  return <button key={item.key} onClick={() => toggleLayer(item.key)} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-white/[0.045]"><Icon size={16} className="text-gray-400" /><span className="flex-1 text-xs font-medium text-gray-200">{item.label}</span><span className={`h-2.5 w-2.5 rounded-full ${enabled ? 'bg-emerald-400' : 'bg-gray-600'}`} /></button>;
+                  return (
+                    <button key={item.key} onClick={() => toggleLayer(item.key)} className="flex w-full items-center gap-3 border-b border-white/10 px-3 py-2.5 text-left last:border-0 hover:bg-white/[0.045]">
+                      <Icon size={15} className="text-gray-400 shrink-0" />
+                      <span className="flex-1 text-xs font-medium text-gray-200">{item.label}</span>
+                      <span className={`h-2.5 w-2.5 rounded-full transition ${enabled ? 'bg-emerald-400' : 'bg-gray-600'}`} />
+                    </button>
+                  );
                 })}
               </div>
             </div>
-            <button onClick={() => setActiveModal('layers')} className="mt-auto rounded-xl border border-white/15 px-3 py-2.5 text-xs font-semibold text-gray-300 transition hover:border-[#F4B205]/50 hover:text-white">Abrir controles avançados</button>
           </div>
         )}
 
-        <div className="flex items-center justify-between border-t border-white/10 px-4 py-3">
-          <button onClick={() => setActiveModal('info')} className="flex items-center gap-1.5 text-[11px] font-medium text-gray-500 transition hover:text-white"><Info size={14} /> Sobre a plataforma</button>
+        <div className="flex items-center justify-between border-t border-white/10 px-4 py-2.5">
+          <button onClick={() => setActiveModal('info')} className="flex items-center gap-1.5 text-[11px] font-medium text-gray-500 transition hover:text-white"><Info size={13} /> Sobre</button>
           <button onClick={() => flyToPreset('nugep')} className="text-[11px] font-semibold text-[#F4B205] hover:text-[#fbc337]">Centralizar</button>
         </div>
       </aside>
 
-      {/* Barra compacta somente em telas pequenas. */}
-      <nav className="fixed inset-x-3 bottom-3 z-40 flex h-14 items-center justify-around rounded-2xl border border-white/15 bg-[#101317]/95 px-2 shadow-2xl backdrop-blur-xl md:hidden">
-        <button onClick={() => { setTerritoriesListTab('points'); setActiveModal('territories_list'); }} className="rounded-xl p-2 text-[#F4B205]" title="Dados"><Hexagon size={19} /></button>
-        <button onClick={() => fileInputRef.current?.click()} className="rounded-xl p-2 text-[#F4B205]" title="Importar"><Upload size={19} /></button>
-        <button onClick={() => setActiveModal('layers')} className="rounded-xl p-2 text-[#F4B205]" title="Camadas"><Layers size={19} /></button>
-        <button onClick={() => setActiveModal('settings')} className="rounded-xl p-2 text-gray-300" title="Configurações"><Settings size={19} /></button>
-        <button onClick={() => setActiveModal('info')} className="rounded-xl p-2 text-gray-300" title="Sobre"><Info size={19} /></button>
+      {/* Mobile workspace drawer */}
+      {showMobileWorkspace && (
+        <div className="fixed inset-0 z-50 md:hidden flex flex-col justify-end pointer-events-auto">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowMobileWorkspace(false)} />
+          <div className="relative rounded-t-3xl border-t border-white/15 bg-[#101317]/98 max-h-[80vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="flex justify-center pt-3 pb-1 shrink-0">
+              <div className="w-10 h-1 rounded-full bg-white/20" />
+            </div>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 shrink-0">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#F4B205]">Espaço de trabalho</p>
+                <h2 className="text-sm font-semibold text-white leading-tight">Projeto territorial</h2>
+              </div>
+              <button onClick={() => setShowMobileWorkspace(false)} className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition"><X size={18} /></button>
+            </div>
+            <div className="px-4 pt-3 shrink-0">
+              <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/20 p-1">
+                <button onClick={() => setWorkspaceTab('data')} className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${workspaceTab === 'data' ? 'bg-[#0F3E8C] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Dados</button>
+                <button onClick={() => setWorkspaceTab('layers')} className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${workspaceTab === 'layers' ? 'bg-[#0F3E8C] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Camadas</button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+              {workspaceTab === 'data' ? (
+                <div className="flex flex-col gap-3">
+                  <button onClick={() => { fileInputRef.current?.click(); setShowMobileWorkspace(false); }} disabled={isProcessing} className="flex w-full items-center gap-3 rounded-xl bg-gradient-to-r from-[#F4B205] to-[#F57602] px-4 py-3 text-left text-[#0F3E8C] shadow-lg transition hover:brightness-110 disabled:opacity-60">
+                    {isProcessing ? <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[#0F3E8C] border-t-transparent shrink-0" /> : <FileSpreadsheet size={16} className="shrink-0" />}
+                    <div><span className="block text-xs font-bold">{isProcessing ? 'Processando...' : 'Importar planilha'}</span><span className="block text-[10px] opacity-75">CSV · XLSX · pontos no mapa</span></div>
+                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={() => { setTerritoriesListTab('points'); setActiveModal('territories_list'); setShowMobileWorkspace(false); }} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-3 text-left transition hover:border-[#F4B205]/45">
+                      <div className="flex items-center gap-1.5 mb-1"><MapPin size={13} className="text-[#F4B205]" /><span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Pontos</span></div>
+                      <p className="text-2xl font-bold text-white">{objetos.length}</p>
+                    </button>
+                    <button onClick={() => { setTerritoriesListTab('territories'); setActiveModal('territories_list'); setShowMobileWorkspace(false); }} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-3 text-left transition hover:border-[#F4B205]/45">
+                      <div className="flex items-center gap-1.5 mb-1"><Hexagon size={13} className="text-[#F4B205]" /><span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Territórios</span></div>
+                      <p className="text-2xl font-bold text-white">{demarcatedTerritories.length}</p>
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
+                    {objetos.slice(0, 5).map(point => (
+                      <button key={point.id} onClick={() => { focusPoint(point); setShowMobileWorkspace(false); }} className="flex w-full items-center gap-2.5 rounded-xl border border-transparent bg-white/[0.035] px-3 py-2.5 text-left transition hover:border-white/10 hover:bg-white/[0.07]">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0F3E8C]/45 text-[#F4B205]"><MapPin size={14} /></span>
+                        <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-gray-100">{point.titulo}</span><span className="block truncate text-[11px] text-gray-500">{point.objeto || 'Ponto georreferenciado'}</span></span>
+                      </button>
+                    ))}
+                    {demarcatedTerritories.slice(0, 3).map(territory => (
+                      <button key={territory.id} onClick={() => { focusTerritory(territory); setShowMobileWorkspace(false); }} className="flex w-full items-center gap-2.5 rounded-xl border border-transparent bg-white/[0.035] px-3 py-2.5 text-left transition hover:border-white/10 hover:bg-white/[0.07]">
+                        <span className="h-8 w-8 shrink-0 rounded-lg flex items-center justify-center" style={{ backgroundColor: territory.cor + '33', border: `1.5px solid ${territory.cor}66` }}><span className="w-3 h-3 rounded-sm" style={{ backgroundColor: territory.cor }} /></span>
+                        <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-gray-100">{territory.nome}</span><span className="text-[11px] text-gray-500">{territory.areaHectares.toLocaleString('pt-BR')} ha</span></span>
+                      </button>
+                    ))}
+                    {!objetos.length && !demarcatedTerritories.length && (
+                      <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-gray-500">Nenhum registro ainda.</div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Mapa base</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button onClick={() => setActiveLayers(prev => prev.filter(l => l !== 'satellite'))} className={`rounded-xl border p-3 text-left text-xs font-semibold transition ${!activeLayers.includes('satellite') ? 'border-[#F4B205]/60 bg-[#0F3E8C]/35 text-white' : 'border-white/10 bg-white/[0.035] text-gray-400'}`}><Globe size={17} className="mb-2 text-[#F4B205]" />Vetorial</button>
+                      <button onClick={() => setActiveLayers(prev => prev.includes('satellite') ? prev.filter(l => l !== 'satellite') : [...prev, 'satellite'])} className={`rounded-xl border p-3 text-left text-xs font-semibold transition ${activeLayers.includes('satellite') ? 'border-[#F4B205]/60 bg-[#0F3E8C]/35 text-white' : 'border-white/10 bg-white/[0.035] text-gray-400'}`}><Mountain size={17} className="mb-2 text-[#F4B205]" />Satélite</button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Camadas</p>
+                    <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.035]">
+                      {[
+                        { key: 'markers', label: 'Pontos', icon: MapPin, count: objetos.length },
+                        { key: 'territories', label: 'Territórios', icon: Hexagon, count: demarcatedTerritories.length },
+                        { key: 'relevo', label: 'Relevo 3D', icon: Mountain, count: null },
+                        { key: 'buildings', label: 'Edificações', icon: Building2, count: null },
+                      ].map(item => {
+                        const Icon = item.icon;
+                        const enabled = activeLayers.includes(item.key);
+                        return (
+                          <button key={item.key} onClick={() => toggleLayer(item.key)} className="flex w-full items-center gap-3 border-b border-white/10 px-4 py-3 text-left last:border-0 hover:bg-white/[0.045]">
+                            <Icon size={16} className="text-[#F4B205] shrink-0" />
+                            <span className="flex-1 text-sm font-medium text-gray-200">{item.label}{item.count !== null && <span className="ml-1.5 text-[11px] text-gray-500">({item.count})</span>}</span>
+                            <span className={`relative h-5 w-9 rounded-full transition ${enabled ? 'bg-[#0F3E8C]' : 'bg-white/15'}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition ${enabled ? 'left-[18px]' : 'left-0.5'}`} /></span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Barra de navegação mobile melhorada */}
+      <nav className="fixed inset-x-3 bottom-3 z-40 flex h-16 items-center justify-around rounded-2xl border border-white/15 bg-[#101317]/96 px-2 shadow-2xl backdrop-blur-xl md:hidden">
+        <button onClick={() => setShowMobileWorkspace(true)} className="flex flex-col items-center gap-0.5 rounded-xl px-3 py-2 text-gray-400 hover:text-[#F4B205] transition" title="Espaço de trabalho">
+          <Layers size={18} />
+          <span className="text-[9px] font-semibold">Dados</span>
+        </button>
+        <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center gap-0.5 rounded-xl bg-[#F4B205]/15 px-4 py-2 text-[#F4B205] ring-1 ring-[#F4B205]/40 transition hover:bg-[#F4B205]/25" title="Importar planilha">
+          <Upload size={18} />
+          <span className="text-[9px] font-semibold">Importar</span>
+        </button>
+        <button onClick={() => { setActiveTool(activeTool === 'point' ? 'navigate' : 'point'); if (activeTool !== 'point') showToast('Clique no mapa para criar um ponto.', 'info'); }} className={`flex flex-col items-center gap-0.5 rounded-xl px-3 py-2 transition ${activeTool === 'point' ? 'text-[#F4B205]' : 'text-gray-400 hover:text-white'}`} title="Adicionar ponto">
+          <MapPin size={18} />
+          <span className="text-[9px] font-semibold">Ponto</span>
+        </button>
+        <button onClick={() => setActiveModal('settings')} className="flex flex-col items-center gap-0.5 rounded-xl px-3 py-2 text-gray-400 hover:text-white transition" title="Configurações">
+          <Settings size={18} />
+          <span className="text-[9px] font-semibold">Config.</span>
+        </button>
+        <button onClick={() => flyToPreset('nugep')} className="flex flex-col items-center gap-0.5 rounded-xl px-3 py-2 text-gray-400 hover:text-[#F4B205] transition" title="Centralizar">
+          <Compass size={18} />
+          <span className="text-[9px] font-semibold">Norte</span>
+        </button>
       </nav>
 
-      {/* Ferramentas de edição: ações nomeadas no desktop, ícones no mobile. */}
+      {/* Ferramentas de edição */}
       <div style={uiZoomStyle} className="ui-scale-target absolute right-3 top-[5.75rem] z-20 pointer-events-auto origin-top-right md:right-4">
-        <div className="w-11 rounded-xl border border-white/15 bg-[#101317]/94 p-1.5 shadow-xl backdrop-blur-xl md:w-40 md:p-2">
-          <p className="mb-1.5 hidden px-2 pt-1 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500 md:block">Ferramentas</p>
+        <div className="w-11 rounded-2xl border border-white/12 bg-[#101317]/95 p-1.5 shadow-2xl backdrop-blur-xl md:w-[148px] md:p-2">
+          <p className="mb-2 hidden px-1.5 pt-1 text-[9px] font-bold uppercase tracking-[0.18em] text-gray-600 md:block">Ferramentas</p>
           {[
             { key: 'navigate' as const, label: 'Navegar', icon: MousePointer, action: () => setActiveTool('navigate') },
-            { key: 'point' as const, label: 'Adicionar ponto', icon: MapPin, action: () => { setActiveTool('point'); showToast('Clique no mapa para criar um ponto e adicionar anotações.', 'info'); } },
-            { key: 'measure' as const, label: 'Medir distância', icon: Ruler, action: () => { if (activeTool === 'measure') { setActiveTool('navigate'); setMeasurementPoints([]); } else { setActiveTool('measure'); setMeasurementPoints([]); showToast('Clique no mapa para medir uma distância.', 'info'); } } },
-            { key: 'polygon' as const, label: 'Demarcar área', icon: Hexagon, action: () => { if (activeTool === 'polygon') { setActiveTool('navigate'); setPolygonDraft([]); } else { setActiveTool('polygon'); setPolygonDraft([]); showToast('Clique em cada vértice da área e conclua a demarcação.', 'info'); } } },
+            { key: 'point' as const, label: 'Adicionar ponto', icon: MapPin, action: () => { setActiveTool('point'); showToast('Clique no mapa para criar um ponto.', 'info'); } },
+            { key: 'measure' as const, label: 'Medir distância', icon: Ruler, action: () => { if (activeTool === 'measure') { setActiveTool('navigate'); setMeasurementPoints([]); } else { setActiveTool('measure'); setMeasurementPoints([]); showToast('Clique para medir distância.', 'info'); } } },
+            { key: 'polygon' as const, label: 'Demarcar área', icon: Hexagon, action: () => { if (activeTool === 'polygon') { setActiveTool('navigate'); setPolygonDraft([]); } else { setActiveTool('polygon'); setPolygonDraft([]); showToast('Clique nos vértices da área a demarcar.', 'info'); } } },
           ].map(tool => {
             const Icon = tool.icon;
             const active = activeTool === tool.key;
-            return <button key={tool.key} onClick={tool.action} className={`mb-1 flex w-full items-center gap-2 rounded-lg p-2 text-left transition ${active ? 'bg-[#0F3E8C] text-white shadow-sm' : 'text-gray-400 hover:bg-white/[0.08] hover:text-white'}`} title={tool.label}><Icon size={16} className={active ? 'text-[#F4B205]' : ''} /><span className="hidden text-xs font-medium md:block">{tool.label}</span></button>;
+            return (
+              <button
+                key={tool.key}
+                onClick={tool.action}
+                className={`mb-0.5 flex w-full items-center gap-2 rounded-xl p-2 text-left transition-all duration-150 ${
+                  active ? 'bg-[#0F3E8C] text-white shadow-md' : 'text-gray-500 hover:bg-white/[0.07] hover:text-white'
+                }`}
+                title={tool.label}
+              >
+                <Icon size={15} className={active ? 'text-[#F4B205] shrink-0' : 'shrink-0'} />
+                <span className="hidden text-xs font-medium md:block truncate">{tool.label}</span>
+              </button>
+            );
           })}
-          <div className="my-1.5 h-px bg-white/10" />
-          <button onClick={toggle3DCamera} className={`mb-1 flex w-full items-center gap-2 rounded-lg p-2 text-left transition ${viewState.pitch > 20 ? 'bg-[#0F3E8C]/60 text-white' : 'text-gray-400 hover:bg-white/[0.08] hover:text-white'}`} title="Alternar perspectiva 2D/3D"><span className="w-4 text-center text-xs font-bold text-[#F4B205]">{viewState.pitch > 20 ? '3D' : '2D'}</span><span className="hidden text-xs font-medium md:block">Perspectiva</span></button>
-          <button onClick={() => setViewState(prev => ({ ...prev, bearing: 0 }))} className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-gray-400 transition hover:bg-white/[0.08] hover:text-white" title="Resetar norte"><Compass size={16} style={{ transform: `rotate(${-viewState.bearing}deg)` }} /><span className="hidden text-xs font-medium md:block">Resetar norte</span></button>
+          <div className="my-2 h-px bg-white/8 mx-1" />
+          <button
+            onClick={toggle3DCamera}
+            className={`mb-0.5 flex w-full items-center gap-2 rounded-xl p-2 text-left transition-all duration-150 ${viewState.pitch > 20 ? 'bg-[#0F3E8C]/50 text-white' : 'text-gray-500 hover:bg-white/[0.07] hover:text-white'}`}
+            title="Alternar perspectiva 2D/3D"
+          >
+            <span className="w-[15px] text-center text-[11px] font-bold text-[#F4B205] shrink-0">{viewState.pitch > 20 ? '3D' : '2D'}</span>
+            <span className="hidden text-xs font-medium md:block">Perspectiva</span>
+          </button>
+          <button
+            onClick={() => setViewState(prev => ({ ...prev, bearing: 0 }))}
+            className="flex w-full items-center gap-2 rounded-xl p-2 text-left text-gray-500 transition hover:bg-white/[0.07] hover:text-white"
+            title="Resetar norte"
+          >
+            <Compass size={15} className="shrink-0" style={{ transform: `rotate(${-viewState.bearing}deg)` }} />
+            <span className="hidden text-xs font-medium md:block">Resetar norte</span>
+          </button>
         </div>
       </div>
 
@@ -3006,6 +3210,7 @@ export default function HoloMapPlatform() {
                   disabled={Boolean(coordinateColumn)}
                   className="w-full bg-white/10 border border-amber-400/40 rounded-xl px-3 py-2 text-xs outline-none focus:border-[#F4B205] disabled:cursor-not-allowed disabled:opacity-35"
                 >
+                  <option value="" className="bg-gray-900 text-white">— Selecione a coluna —</option>
                   {parsedSpreadsheet.headers.map(h => (
                     <option key={h} value={h} className="bg-gray-900 text-white">{h}</option>
                   ))}
@@ -3020,6 +3225,7 @@ export default function HoloMapPlatform() {
                   disabled={Boolean(coordinateColumn)}
                   className="w-full bg-white/10 border border-amber-400/40 rounded-xl px-3 py-2 text-xs outline-none focus:border-[#F4B205] disabled:cursor-not-allowed disabled:opacity-35"
                 >
+                  <option value="" className="bg-gray-900 text-white">— Selecione a coluna —</option>
                   {parsedSpreadsheet.headers.map(h => (
                     <option key={h} value={h} className="bg-gray-900 text-white">{h}</option>
                   ))}
@@ -3039,7 +3245,7 @@ export default function HoloMapPlatform() {
                     <option key={h} value={h} className="bg-gray-900 text-white">{h}</option>
                   ))}
                 </select>
-                <p className="mt-1 text-[9px] opacity-50">Ex.: “-9.17, -36.06” ou “-9,17; -36,06”</p>
+                <p className="mt-1 text-[9px] opacity-50">Ex.: “-9.17, -36.06”, DMS ou “9°10&apos;30&quot;S, 36°03&apos;45&quot;W”</p>
               </div>
 
               <div>
@@ -3128,6 +3334,36 @@ export default function HoloMapPlatform() {
               </div>
             </div>
 
+            {/* Modo de importação */}
+            <div className="py-3 shrink-0 border-b border-white/10">
+              <p className="text-[10px] uppercase font-bold tracking-wider text-gray-500 mb-2">Como importar no mapa</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setImportMode('points')}
+                  className={`rounded-xl border p-3 text-left transition ${importMode === 'points' ? 'border-[#F4B205]/60 bg-[#0F3E8C]/30' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <MapPin size={15} className="text-[#F4B205]" />
+                    <span className="text-xs font-bold">Marcar pontos</span>
+                  </div>
+                  <p className="text-[10px] text-gray-400">Cada linha vira um marcador com título e anotações no mapa.</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportMode('territory')}
+                  disabled={importedCoordinates.length < 3}
+                  className={`rounded-xl border p-3 text-left transition disabled:opacity-40 disabled:cursor-not-allowed ${importMode === 'territory' ? 'border-[#F4B205]/60 bg-[#0F3E8C]/30' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Hexagon size={15} className="text-[#F4B205]" />
+                    <span className="text-xs font-bold">Criar polígono</span>
+                  </div>
+                  <p className="text-[10px] text-gray-400">Usa os vértices em ordem para demarcar uma área (mín. 3 pontos).</p>
+                </button>
+              </div>
+            </div>
+
             {/* Tabela de prévia */}
             <div className="flex-1 overflow-auto custom-scrollbar my-4 rounded-2xl border border-white/10 bg-black/20">
               <table className="w-full text-left border-collapse text-xs">
@@ -3179,29 +3415,35 @@ export default function HoloMapPlatform() {
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border border-[#F4B205]/40 text-[#F4B205] hover:bg-[#F4B205]/10 transition-all"
               >
                 <FileSpreadsheet size={14} />
-                Exportar Excel
+                Exportar validação
               </button>
-              <div className="flex items-center gap-2 flex-wrap justify-end">
+              <div className="flex items-center gap-2 flex-wrap justify-end w-full sm:w-auto">
                 <button
-                  onClick={() => applySpreadsheet(false)}
-                  disabled={!importedCoordinates.length}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-white/10 border border-white/20 hover:bg-white/15 text-white flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => setActiveModal(null)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/15 text-gray-300"
                 >
-                  <MapPin size={14} />
-                  <span>Importar {importedCoordinates.length || ''} pontos</span>
+                  Cancelar
                 </button>
                 <button
-                  onClick={() => applySpreadsheet(true)}
-                  disabled={importedCoordinates.length < 3}
-                  title="Usa a sequência de linhas como vértices do polígono"
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-[#0F3E8C] hover:bg-[#1E4DB7] text-white flex items-center gap-1.5 border border-[#F4B205]/30 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={applySpreadsheet}
+                  disabled={!importedCoordinates.length || (importMode === 'territory' && importedCoordinates.length < 3)}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-[#F4B205] hover:bg-[#fbc337] text-[#0F3E8C] flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40 shadow-md"
                 >
-                  <Hexagon size={14} className="text-[#F4B205]" />
-                  <span>Criar área pelos vértices</span>
+                  {importMode === 'points' ? <MapPin size={14} /> : <Hexagon size={14} />}
+                  <span>
+                    {importMode === 'points'
+                      ? `Confirmar — ${importedCoordinates.length} pontos no mapa`
+                      : `Confirmar — criar polígono (${importedCoordinates.length} vértices)`}
+                  </span>
                 </button>
               </div>
             </div>
-            <p className="mt-2 text-right text-[10px] text-gray-500">Para criar uma área correta, as linhas da planilha precisam estar na ordem do perímetro.</p>
+            {!latColumn && !lngColumn && !coordinateColumn && (
+              <p className="mt-2 text-center text-[10px] text-amber-400">⚠ Selecione as colunas de coordenadas acima para continuar.</p>
+            )}
+            {importMode === 'territory' && (
+              <p className="mt-2 text-right text-[10px] text-gray-500">As linhas devem estar na ordem do perímetro para formar a área corretamente.</p>
+            )}
           </div>
         </div>
       )}
