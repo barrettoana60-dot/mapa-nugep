@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import Map, { Source, Layer, Marker, NavigationControl, Popup, MapRef } from 'react-map-gl';
+import Map, { Source, Layer, Marker, NavigationControl, MapRef } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import Papa from 'papaparse';
 import { 
@@ -10,7 +10,7 @@ import {
   FileSpreadsheet, Edit3, Save, Sun, Moon, 
   RotateCcw, Hexagon, Globe, Building2, CloudSun,
   CheckCircle2, AlertCircle, FileText, MousePointer, Landmark,
-  Printer, ShieldCheck, Undo2, ChevronRight
+  Printer, ShieldCheck, Undo2, ChevronRight, LocateFixed
 } from 'lucide-react';
 import { NUGEP_LOGO } from '../assets/logo';
 
@@ -267,10 +267,13 @@ export default function HoloMapPlatform() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchSuggestions, setSearchSuggestions] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isSearchClicked, setIsSearchClicked] = useState(false);
   const [searchCategoryFilter, setSearchCategoryFilter] = useState<'all' | 'territories' | 'points' | 'coords'>('all');
+  const [searchedLocation, setSearchedLocation] = useState<{ lng: number; lat: number; label: string } | null>(null);
 
   // Medição e rascunho de polígono
   const [measurementPoints, setMeasurementPoints] = useState<[number, number][]>([]);
@@ -282,6 +285,7 @@ export default function HoloMapPlatform() {
   const [parsedSpreadsheet, setParsedSpreadsheet] = useState<ParsedSpreadsheet | null>(null);
   const [latColumn, setLatColumn] = useState('');
   const [lngColumn, setLngColumn] = useState('');
+  const [coordinateColumn, setCoordinateColumn] = useState('');
   const [titleColumn, setTitleColumn] = useState('');
   const [categoryColumn, setCategoryColumn] = useState('');
   const [sheetAnnotation, setSheetAnnotation] = useState('');
@@ -423,9 +427,14 @@ export default function HoloMapPlatform() {
   };
 
   const getImportedCoordinates = useCallback((): ImportedCoordinate[] => {
-    if (!parsedSpreadsheet || !latColumn || !lngColumn) return [];
+    if (!parsedSpreadsheet || (!coordinateColumn && (!latColumn || !lngColumn))) return [];
     const zone = Number.parseInt(utmZone, 10);
     return parsedSpreadsheet.rows.reduce<ImportedCoordinate[]>((valid, row, index) => {
+      if (coordinateColumn) {
+        const parsed = parseCoordinates(String(row[coordinateColumn] ?? ''));
+        if (parsed) valid.push({ lng: parsed[0], lat: parsed[1], row, index });
+        return valid;
+      }
       const first = parseCoord(row[latColumn]);
       const second = parseCoord(row[lngColumn]);
       let coordinate: [number, number] | null;
@@ -446,7 +455,13 @@ export default function HoloMapPlatform() {
       if (coordinate) valid.push({ lng: coordinate[0], lat: coordinate[1], row, index });
       return valid;
     }, []);
-  }, [parsedSpreadsheet, latColumn, lngColumn, coordinateReference, utmZone, utmHemisphere]);
+  }, [parsedSpreadsheet, latColumn, lngColumn, coordinateColumn, coordinateReference, utmZone, utmHemisphere]);
+
+  const importedCoordinates = useMemo(() => getImportedCoordinates(), [getImportedCoordinates]);
+  const importedCoordinateByRow = useMemo(
+    () => new Map(importedCoordinates.map(item => [item.index, item])),
+    [importedCoordinates]
+  );
 
   const fitMapToCoordinates = useCallback((coordinates: [number, number][]) => {
     if (!coordinates.length) return;
@@ -478,98 +493,24 @@ export default function HoloMapPlatform() {
       }];
     }
 
-    // Centro de bias: Nordeste do Brasil (Maceió/Alagoas)
-    const BIAS_LAT = -9.17;
-    const BIAS_LNG = -36.06;
-
-    // 1. Nominatim OpenStreetMap — confiável, gratuito, sem CORS para fetch
+    // A consulta passa pela rota do sistema: isso evita as restrições de CORS e
+    // User-Agent impostas pelos provedores de geocodificação no navegador.
     try {
-      const params = new URLSearchParams({
-        q,
-        format: 'json',
-        limit: '7',
-        addressdetails: '1',
-        countrycodes: 'br',          // Restringir ao Brasil
-        'accept-language': 'pt-BR',
-        viewbox: `${BIAS_LNG - 15},${BIAS_LAT + 10},${BIAS_LNG + 15},${BIAS_LAT - 10}`,
-        bounded: '0',                // viewbox como preferência, não restrição rígida
-      });
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?${params}`,
-        { headers: { 'Accept-Language': 'pt-BR' } }
-      );
+      const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          return data.map((item: any) => {
-            const addr = item.address || {};
-            const displayParts = item.display_name.split(',').map((s: string) => s.trim());
-            const title = addr.road || addr.amenity || addr.building || addr.tourism
-              || addr.leisure || displayParts[0] || item.name || 'Localidade';
-            const subtitle = [
-              addr.suburb || addr.neighbourhood,
-              addr.city || addr.town || addr.village || addr.municipality,
-              addr.state
-            ].filter(Boolean).join(', ');
-            return {
-              id: `osm_${item.place_id}`,
-              text: title,
-              place_name: subtitle ? `${title} — ${subtitle}` : item.display_name,
-              center: [parseFloat(item.lon), parseFloat(item.lat)] as [number, number]
-            };
-          });
-        }
+        if (Array.isArray(data?.results) && data.results.length) return data.results;
       }
-    } catch (e) {
-      console.warn('Nominatim falhou:', e);
-    }
+    } catch {}
 
-    // 2. Photon (Komoot / OSM) — com proximity para Nordeste
-    try {
-      const params = new URLSearchParams({
-        q,
-        limit: '6',
-        lang: 'default',
-        lat: String(BIAS_LAT),
-        lon: String(BIAS_LNG),
-      });
-      const res = await fetch(`https://photon.komoot.io/api/?${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.features && data.features.length > 0) {
-          // Filtrar primeiro por Brasil, depois aceita outros se não houver resultado BR
-          const brFeatures = data.features.filter((f: any) =>
-            (f.properties?.country || '').toLowerCase().includes('brasil') ||
-            (f.properties?.countrycode || '').toLowerCase() === 'br'
-          );
-          const features = brFeatures.length > 0 ? brFeatures : data.features;
-          return features.map((f: any, idx: number) => {
-            const p = f.properties || {};
-            const streetInfo = p.street ? `${p.street}${p.housenumber ? ', ' + p.housenumber : ''}` : '';
-            const locality = [p.suburb || p.district, p.city, p.state].filter(Boolean).join(', ');
-            const title = p.name || streetInfo || p.city || 'Localidade';
-            const subtitle = [streetInfo, locality].filter(Boolean).join(' • ');
-            return {
-              id: `photon_${idx}_${p.osm_id || Date.now()}`,
-              text: title,
-              place_name: subtitle ? `${title} — ${subtitle}` : title,
-              center: f.geometry.coordinates as [number, number]
-            };
-          });
-        }
-      }
-    } catch (e) {
-      console.warn('Photon falhou:', e);
-    }
-
-    // 3. Fallback: Mapbox Geocoding com bias para Brasil
+    // Último fallback no cliente caso a infraestrutura da rota esteja indisponível.
     try {
       const params = new URLSearchParams({
         access_token: MAPBOX_TOKEN,
         limit: '5',
         language: 'pt',
         country: 'br',
-        proximity: `${BIAS_LNG},${BIAS_LAT}`,
+        proximity: '-36.06,-9.17',
         types: 'address,place,poi,neighborhood,locality,district',
       });
       const res = await fetch(
@@ -600,9 +541,46 @@ export default function HoloMapPlatform() {
     setTimeout(() => setIsSearchClicked(false), 320);
   };
 
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown' && searchSuggestions.length) {
+      event.preventDefault();
+      setActiveSuggestionIndex(prev => Math.min(prev + 1, searchSuggestions.length - 1));
+    } else if (event.key === 'ArrowUp' && searchSuggestions.length) {
+      event.preventDefault();
+      setActiveSuggestionIndex(prev => Math.max(prev - 1, 0));
+    } else if (event.key === 'Escape') {
+      setShowSearchDropdown(false);
+      setIsSearchFocused(false);
+      searchInputRef.current?.blur();
+    }
+  };
+
+  const locateUser = () => {
+    if (!navigator.geolocation) {
+      showToast('A localização não é compatível com este navegador.', 'error');
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const { latitude: lat, longitude: lng } = coords;
+        setViewState(prev => ({ ...prev, latitude: lat, longitude: lng, zoom: 16, pitch: 45 }));
+        setSearchedLocation({ lat, lng, label: 'Sua localização' });
+        setIsLocating(false);
+        showToast('Localização encontrada.', 'success');
+      },
+      () => {
+        setIsLocating(false);
+        showToast('Não foi possível acessar sua localização. Verifique a permissão do navegador.', 'error');
+      },
+      { enableHighAccuracy: true, timeout: 9000, maximumAge: 60000 }
+    );
+  };
+
   // Busca por endereço, território, ponto cultural ou coordenadas com debounce
   const handleSearchInput = (value: string) => {
     setSearchQuery(value);
+    setActiveSuggestionIndex(-1);
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     const requestId = ++searchRequestRef.current;
 
@@ -618,6 +596,7 @@ export default function HoloMapPlatform() {
         center: coords,
         isCoord: true
       }]);
+      setIsSearching(false);
       setShowSearchDropdown(true);
       return;
     }
@@ -644,11 +623,13 @@ export default function HoloMapPlatform() {
       };
     });
 
-    const localPoints = objetos.filter(o =>
-      o.titulo.toLowerCase().includes(q) ||
-      (o.objeto && o.objeto.toLowerCase().includes(q)) ||
-      (o.autor && o.autor.toLowerCase().includes(q))
-    ).map(o => ({
+    const localPoints = objetos.filter(o => {
+      const indexedText = [o.titulo, o.objeto, o.autor, o.anotacoes, ...Object.values(o.extraProps || {})]
+        .filter(Boolean)
+        .join(' ')
+        .toLocaleLowerCase('pt-BR');
+      return indexedText.includes(q);
+    }).map(o => ({
       id: `local_point_${o.id}`,
       text: o.titulo,
       place_name: `${o.objeto || 'Patrimônio Cultural'} • ${o.autor || 'Território'} (${o.latitude.toFixed(4)}, ${o.longitude.toFixed(4)})`,
@@ -690,6 +671,7 @@ export default function HoloMapPlatform() {
     const coords = parseCoordinates(searchQuery);
     if (coords) {
       setViewState(prev => ({ ...prev, longitude: coords[0], latitude: coords[1], zoom: 16, pitch: 58 }));
+      setSearchedLocation({ lng: coords[0], lat: coords[1], label: 'Coordenada pesquisada' });
       setShowSearchDropdown(false);
       setIsSearchFocused(false);
       showToast(`Localizado: ${coords[1].toFixed(5)}°, ${coords[0].toFixed(5)}°`, 'success');
@@ -697,7 +679,7 @@ export default function HoloMapPlatform() {
     }
 
     if (searchSuggestions.length > 0) {
-      handleSelectSuggestion(searchSuggestions[0]);
+      handleSelectSuggestion(searchSuggestions[Math.max(0, activeSuggestionIndex)]);
       return;
     }
 
@@ -728,6 +710,7 @@ export default function HoloMapPlatform() {
     if (item.center && Array.isArray(item.center)) {
       const [lng, lat] = item.center;
       setViewState(prev => ({ ...prev, longitude: lng, latitude: lat, zoom: 16, pitch: 58 }));
+      if (!item.isTerritory && !item.isPoint) setSearchedLocation({ lng, lat, label: item.text });
       showToast(`Localizado: ${item.text}`, 'success');
     }
   };
@@ -736,6 +719,19 @@ export default function HoloMapPlatform() {
   const handleMapClick = async (e: any) => {
     const target = e.originalEvent?.target;
     if (target && target.closest && target.closest('button, input, textarea, select, .no-map-click, .mapboxgl-ctrl')) {
+      return;
+    }
+
+    const mapFeature = e.features?.[0];
+    if (activeTool === 'navigate' && mapFeature?.layer?.id === 'unclustered-points') {
+      const point = objetos.find(obj => obj.id === mapFeature.properties?.id);
+      if (point) {
+        setSelectedPoint(point);
+        return;
+      }
+    }
+    if (activeTool === 'navigate' && mapFeature?.layer?.id === 'point-clusters') {
+      setViewState(prev => ({ ...prev, longitude: e.lngLat.lng, latitude: e.lngLat.lat, zoom: Math.min(prev.zoom + 2, 18) }));
       return;
     }
 
@@ -928,6 +924,7 @@ export default function HoloMapPlatform() {
     setCategoryColumn('');
     setLatColumn('');
     setLngColumn('');
+    setCoordinateColumn('');
     setCoordinateReference('geographic');
 
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
@@ -965,6 +962,10 @@ export default function HoloMapPlatform() {
         'descricao', 'description', 'observacao', 'observacoes', 'obs', 'nota', 'notas',
         'informacao', 'detalhes', 'historico', 'contexto', 'texto', 'comentario', 'info'
       ];
+      const PAIR_ALIASES = [
+        'coordenadas', 'coordenada', 'coord', 'gps', 'lat lng', 'lat long', 'latitude longitude',
+        'localizacao gps', 'geolocalizacao', 'ponto gps', 'position', 'geometry'
+      ];
 
       const findCol = (aliases: string[]) =>
         lowerHeaders.find(h => aliases.some(a => h.clean === a || h.clean.includes(a)));
@@ -974,6 +975,7 @@ export default function HoloMapPlatform() {
       const foundTitle = findCol(TITLE_ALIASES);
       const foundCat = findCol(CAT_ALIASES);
       const foundDesc = findCol(DESC_ALIASES);
+      const foundPair = findCol(PAIR_ALIASES);
       const looksLikeUtm = /\b(utm|northing|easting)\b/i.test(headers.join(' '));
 
       if (foundLat) setLatColumn(foundLat.orig);
@@ -985,6 +987,7 @@ export default function HoloMapPlatform() {
       if (foundTitle) setTitleColumn(foundTitle.orig);
       if (foundCat) setCategoryColumn(foundCat.orig);
       if (foundDesc) setDescColumn(foundDesc.orig);
+      if (foundPair && !looksLikeUtm) setCoordinateColumn(foundPair.orig);
       if (looksLikeUtm) setCoordinateReference('utm');
     };
 
@@ -1055,12 +1058,12 @@ export default function HoloMapPlatform() {
 
   // Aplicar Planilha como Território ou Pontos
   const applySpreadsheet = (asTerritory: boolean = true) => {
-    if (!parsedSpreadsheet || !latColumn || !lngColumn) {
-      showToast('Selecione as colunas de Latitude e Longitude.', 'error');
+    if (!parsedSpreadsheet || (!coordinateColumn && (!latColumn || !lngColumn))) {
+      showToast('Selecione Latitude/Longitude ou uma coluna com o par de coordenadas.', 'error');
       return;
     }
 
-    const validRows = getImportedCoordinates();
+    const validRows = importedCoordinates;
     const importedAt = Date.now();
     const mappedPoints: ObjetoCultural[] = validRows.map(({ lat, lng, row, index }) => {
       const title = titleColumn && row[titleColumn] ? String(row[titleColumn]) : `Ponto #${index + 1}`;
@@ -1132,7 +1135,7 @@ export default function HoloMapPlatform() {
 
       // Aba 1: Pontos com status de validade
       const pontoRows = parsedSpreadsheet.rows.map((row, idx) => {
-        const found = getImportedCoordinates().find(item => item.index === idx);
+        const found = importedCoordinateByRow.get(idx);
         const valid = Boolean(found);
         return {
           '#': idx + 1,
@@ -1210,6 +1213,19 @@ export default function HoloMapPlatform() {
       }))
     };
   }, [demarcatedTerritories]);
+
+  // Pontos em GeoJSON para que o Mapbox agrupe milhares de registros sem
+  // criar um elemento React/HTML para cada marcador importado.
+  const pointsGeoJSON = useMemo(() => ({
+    type: 'FeatureCollection' as const,
+    features: objetos
+      .filter(obj => Number.isFinite(obj.latitude) && Number.isFinite(obj.longitude) && obj.latitude !== 0 && obj.longitude !== 0)
+      .map(obj => ({
+        type: 'Feature' as const,
+        properties: { id: obj.id, title: obj.titulo, category: obj.objeto || 'Ponto' },
+        geometry: { type: 'Point' as const, coordinates: [obj.longitude, obj.latitude] }
+      }))
+  }), [objetos]);
 
   // GeoJSON do rascunho de polígono
   const draftPolygonGeoJSON = useMemo(() => {
@@ -1338,11 +1354,16 @@ export default function HoloMapPlatform() {
               type="text"
               value={searchQuery}
               onChange={e => handleSearchInput(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
               onFocus={() => {
                 setIsSearchFocused(true);
                 setShowSearchDropdown(true);
               }}
               placeholder={isSearchFocused ? "Digite endereço, território ou coordenadas GPS..." : "Buscar no mapa ou coordenadas (-9.17, -36.06)..."}
+              role="combobox"
+              aria-expanded={showSearchDropdown}
+              aria-controls="map-search-results"
+              aria-activedescendant={activeSuggestionIndex >= 0 ? `map-search-result-${activeSuggestionIndex}` : undefined}
               className="w-full bg-transparent text-xs sm:text-sm outline-none placeholder:text-gray-400/60 font-medium transition-colors duration-300 focus:placeholder:text-[#F4B205]/45 text-white"
             />
             {isSearching && (
@@ -1355,6 +1376,7 @@ export default function HoloMapPlatform() {
                   e.stopPropagation();
                   setSearchQuery('');
                   setSearchSuggestions([]);
+                  setActiveSuggestionIndex(-1);
                 }}
                 className="p-1.5 hover:bg-white/10 rounded-full opacity-60 hover:opacity-100 mr-1 transition-all duration-200 hover:rotate-90 text-gray-300 hover:text-white"
                 title="Limpar busca"
@@ -1362,6 +1384,15 @@ export default function HoloMapPlatform() {
                 <X size={13} />
               </button>
             )}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); locateUser(); }}
+              className="p-1.5 rounded-full hover:bg-white/10 text-[#F4B205] transition-all hover:scale-110 disabled:opacity-50"
+              title="Usar minha localização"
+              disabled={isLocating}
+            >
+              <LocateFixed size={15} className={isLocating ? 'animate-spin' : ''} />
+            </button>
 
             {/* Indicador de Atalho Moderno */}
             <div className="hidden sm:flex items-center pr-1.5 shrink-0">
@@ -1529,7 +1560,7 @@ export default function HoloMapPlatform() {
                 </div>
               ) : (
                 /* QUANDO O USUÁRIO DIGITOU: RESULTADOS DE BUSCA */
-                <div>
+                <div id="map-search-results" role="listbox">
                   {searchSuggestions.length === 0 && !isSearching ? (
                     <div className="p-6 text-center opacity-70">
                       <Search size={28} className="mx-auto mb-2 opacity-40 text-[#F4B205]" />
@@ -1541,8 +1572,11 @@ export default function HoloMapPlatform() {
                       {searchSuggestions.map((item, idx) => (
                         <div
                           key={item.id || idx}
+                          id={`map-search-result-${idx}`}
+                          role="option"
+                          aria-selected={idx === activeSuggestionIndex}
                           onClick={() => handleSelectSuggestion(item)}
-                          className={`px-4 py-3 hover:bg-[#0F3E8C]/25 cursor-pointer border-b border-white/5 last:border-0 flex items-center justify-between gap-3 transition-all duration-200 hover:pl-5 group anim-stagger-${Math.min(idx + 1, 8)}`}
+                          className={`px-4 py-3 cursor-pointer border-b border-white/5 last:border-0 flex items-center justify-between gap-3 transition-all duration-200 hover:pl-5 group anim-stagger-${Math.min(idx + 1, 8)} ${idx === activeSuggestionIndex ? 'bg-[#0F3E8C]/35 ring-1 ring-inset ring-[#F4B205]/40' : 'hover:bg-[#0F3E8C]/25'}`}
                         >
                           <div className="flex items-center gap-3 min-w-0">
                             <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
@@ -1944,6 +1978,7 @@ export default function HoloMapPlatform() {
           {...viewState}
           onMove={evt => setViewState(evt.viewState)}
           onClick={handleMapClick}
+          interactiveLayerIds={activeLayers.includes('markers') ? ['point-clusters', 'unclustered-points'] : []}
           onDblClick={(e) => {
             if (activeTool === 'polygon' && polygonDraft.length >= 3) {
               e.preventDefault();
@@ -2104,33 +2139,69 @@ export default function HoloMapPlatform() {
             </Source>
           )}
 
-          {/* Marcadores Georreferenciados Salvos */}
-          {activeLayers.includes('markers') && objetos.filter(o => o.latitude !== 0 && o.longitude !== 0).map((obj) => (
-            <Marker
-              key={obj.id}
-              longitude={obj.longitude}
-              latitude={obj.latitude}
-              anchor="bottom"
-              onClick={(e) => {
-                e.originalEvent.stopPropagation();
-                setSelectedPoint(obj);
-              }}
-            >
-              <div className="relative group cursor-pointer flex flex-col items-center">
-                <div 
-                  className={`w-7 h-7 rounded-xl flex items-center justify-center shadow-2xl backdrop-blur-md transition-all duration-300 group-hover:scale-125 border ${
-                    selectedPoint?.id === obj.id 
-                      ? 'bg-[#0F3E8C] text-[#F4B205] border-[#F4B205] scale-110 shadow-lg shadow-[#0F3E8C]/60' 
-                      : isDark
-                        ? 'bg-black/80 text-[#F4B205] border-[#0F3E8C]/50'
-                        : 'bg-white/95 text-[#0F3E8C] border-[#0F3E8C]/30'
-                  }`}
-                >
-                  <MapPin size={14} strokeWidth={2.5} />
+          {/* Pontos georreferenciados: agrupados para manter o mapa rápido em importações grandes. */}
+          {activeLayers.includes('markers') && (
+            <Source id="points-source" type="geojson" data={pointsGeoJSON as any} cluster clusterMaxZoom={14} clusterRadius={52}>
+              <Layer
+                id="point-clusters"
+                type="circle"
+                filter={['has', 'point_count']}
+                paint={{
+                  'circle-color': isDark ? '#0F3E8C' : '#1E4DB7',
+                  'circle-radius': ['step', ['get', 'point_count'], 18, 20, 22, 100, 28],
+                  'circle-opacity': 0.92,
+                  'circle-stroke-width': 2,
+                  'circle-stroke-color': '#F4B205'
+                }}
+              />
+              <Layer
+                id="point-cluster-count"
+                type="symbol"
+                filter={['has', 'point_count']}
+                layout={{ 'text-field': ['get', 'point_count_abbreviated'], 'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'], 'text-size': 12 }}
+                paint={{ 'text-color': '#FFFFFF' }}
+              />
+              <Layer
+                id="unclustered-points"
+                type="circle"
+                filter={['!', ['has', 'point_count']]}
+                paint={{
+                  'circle-color': selectedPoint ? ['case', ['==', ['get', 'id'], selectedPoint.id], '#F4B205', '#0F3E8C'] : '#0F3E8C',
+                  'circle-radius': selectedPoint ? ['case', ['==', ['get', 'id'], selectedPoint.id], 9, 6] : 6,
+                  'circle-stroke-width': 2,
+                  'circle-stroke-color': '#FFFFFF',
+                  'circle-opacity': 0.96
+                }}
+              />
+              <Layer
+                id="point-labels"
+                type="symbol"
+                minzoom={14}
+                filter={['!', ['has', 'point_count']]}
+                layout={{
+                  'text-field': ['get', 'title'],
+                  'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+                  'text-size': 11,
+                  'text-offset': [0, 1.25],
+                  'text-anchor': 'top',
+                  'text-max-width': 14
+                }}
+                paint={{ 'text-color': isDark ? '#FFFFFF' : '#0F172A', 'text-halo-color': isDark ? '#050608' : '#FFFFFF', 'text-halo-width': 1.2 }}
+              />
+            </Source>
+          )}
+
+          {searchedLocation && (
+            <Marker longitude={searchedLocation.lng} latitude={searchedLocation.lat} anchor="bottom">
+              <div className="relative flex flex-col items-center pointer-events-none">
+                <div className="absolute -top-2 w-10 h-10 rounded-full bg-[#F4B205]/25 animate-ping" />
+                <div className="relative w-9 h-9 rounded-full bg-[#F4B205] text-[#0F3E8C] border-2 border-white shadow-xl flex items-center justify-center">
+                  <Search size={16} strokeWidth={3} />
                 </div>
+                <div className="mt-1 max-w-40 truncate px-2 py-1 rounded-lg bg-[#050608]/85 text-[10px] font-bold text-white border border-[#F4B205]/50">{searchedLocation.label}</div>
               </div>
             </Marker>
-          ))}
+          )}
 
           {/* Badges Interativas nos Territórios Salvos */}
           {activeLayers.includes('territories') && demarcatedTerritories.filter(t => t.visivel && t.pontos.length >= 3).map(terr => {
@@ -2160,6 +2231,18 @@ export default function HoloMapPlatform() {
             );
           })}
         </Map>
+
+        <div className="hidden sm:flex absolute right-4 top-20 z-20 pointer-events-none flex-col gap-2">
+          <div className="liquid-glass rounded-2xl px-3 py-2 flex items-center gap-2 border border-white/15 shadow-xl">
+            <span className={`w-2 h-2 rounded-full ${activeLayers.includes('markers') ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`} />
+            <MapPin size={13} className="text-[#F4B205]" />
+            <span className="text-[11px] font-bold">{objetos.length} pontos</span>
+          </div>
+          <div className="liquid-glass rounded-2xl px-3 py-2 flex items-center gap-2 border border-white/15 shadow-xl">
+            <Hexagon size={13} className="text-[#F4B205]" />
+            <span className="text-[11px] font-bold">{demarcatedTerritories.length} territórios</span>
+          </div>
+        </div>
       </div>
 
       {/* =========================================================================
@@ -2941,7 +3024,7 @@ export default function HoloMapPlatform() {
                   <h3 className="font-bold text-base sm:text-lg">{parsedSpreadsheet.fileName}</h3>
                   <p className="text-xs opacity-60">
                     {parsedSpreadsheet.rows.length} registros ·{' '}
-                    {getImportedCoordinates().length} coordenadas válidas
+                    {importedCoordinates.length} coordenadas válidas
                   </p>
                 </div>
               </div>
@@ -2976,6 +3059,21 @@ export default function HoloMapPlatform() {
                     <option key={h} value={h} className="bg-gray-900 text-white">{h}</option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#F4B205] block mb-1">Par de coordenadas</label>
+                <select
+                  value={coordinateColumn}
+                  onChange={e => setCoordinateColumn(e.target.value)}
+                  className="w-full bg-white/10 border border-[#F4B205]/30 rounded-xl px-3 py-2 text-xs outline-none focus:border-[#F4B205]"
+                >
+                  <option value="" className="bg-gray-900 text-white">— Usar duas colunas —</option>
+                  {parsedSpreadsheet.headers.map(h => (
+                    <option key={h} value={h} className="bg-gray-900 text-white">{h}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[9px] opacity-50">Ex.: “-9.17, -36.06” ou “-9,17; -36,06”</p>
               </div>
 
               <div>
@@ -3073,7 +3171,7 @@ export default function HoloMapPlatform() {
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {parsedSpreadsheet.rows.slice(0, 50).map((row, rIdx) => {
-                    const found = getImportedCoordinates().find(item => item.index === rIdx);
+                    const found = importedCoordinateByRow.get(rIdx);
                     const isValid = Boolean(found);
 
                     return (
