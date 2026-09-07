@@ -1,0 +1,548 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-scale: 1;
+  --nugep-blue: #0F3E8C;
+  --nugep-blue-light: #1E4DB7;
+  --nugep-gold: #F4B205;
+  --nugep-gold-light: #FBBF24;
+  --nugep-orange: #F57602;
+  --nugep-red: #CB0F32;
+  --nugep-green: #0E8953;
+  --nugep-cream: #F8E3BB;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #050608;
+  color: #f3f4f6;
+  overflow: hidden;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Temas Liquid Glass com Paleta Oficial NUGEP */
+.theme-dark {
+  --glass-bg: rgba(10, 12, 16, 0.65);
+  --glass-bg-subtle: rgba(18, 22, 30, 0.45);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-strong: rgba(255, 255, 255, 0.16);
+  --glass-text: #f3f4f6;
+  --glass-text-muted: rgba(255, 255, 255, 0.5);
+  --glass-glow: rgba(244, 178, 5, 0.25);
+  --glass-surface: rgba(0, 0, 0, 0.4);
+}
+
+.theme-light {
+  --glass-bg: rgba(245, 247, 250, 0.75);
+  --glass-bg-subtle: rgba(255, 255, 255, 0.6);
+  --glass-border: rgba(0, 0, 0, 0.1);
+  --glass-border-strong: rgba(0, 0, 0, 0.18);
+  --glass-text: #111827;
+  --glass-text-muted: rgba(17, 24, 39, 0.6);
+  --glass-glow: rgba(15, 62, 140, 0.2);
+  --glass-surface: rgba(255, 255, 255, 0.7);
+}
+
+/* Utilitários Liquid Glass */
+.liquid-glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
+}
+
+.liquid-glass-subtle {
+  background: var(--glass-bg-subtle);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid var(--glass-border);
+}
+
+.liquid-glass-pop {
+  background: var(--glass-bg);
+  backdrop-filter: blur(36px) saturate(200%);
+  -webkit-backdrop-filter: blur(36px) saturate(200%);
+  border: 1px solid var(--glass-border-strong);
+  box-shadow: 0 16px 48px -8px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--glass-border);
+}
+
+/* =============================================
+   SISTEMA DE ANIMAÇÕES MODERNAS DO NUGEP MAPS
+   ============================================= */
+
+/* Keyframes para animações */
+@keyframes nugep-border-beam {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes nugep-search-click {
+  0%   { transform: scale(0.985); }
+  55%  { transform: scale(1.008); }
+  100% { transform: scale(1); }
+}
+
+@keyframes nugep-icon-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px rgba(244, 178, 5, 0.3));
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 6px rgba(244, 178, 5, 0.55));
+    transform: scale(1.08);
+  }
+}
+
+/* Glow-pulse suave — botões ativos na dock lateral */
+@keyframes nugep-glow-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 6px rgba(244, 178, 5, 0.08),
+      0 0 0 1px rgba(244, 178, 5, 0.14);
+  }
+  50% {
+    box-shadow:
+      0 0 14px rgba(244, 178, 5, 0.18),
+      0 0 0 1.5px rgba(244, 178, 5, 0.22);
+  }
+}
+
+@keyframes nugep-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+@keyframes nugep-breathe {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50%       { opacity: 1;   transform: scale(1.015); }
+}
+
+@keyframes nugep-float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-3px); }
+}
+
+@keyframes nugep-ripple {
+  0%   { transform: scale(0); opacity: 0.35; }
+  100% { transform: scale(3.5); opacity: 0; }
+}
+
+@keyframes nugep-slide-up-spring {
+  0%   { transform: translateY(18px) scale(0.97); opacity: 0; }
+  65%  { transform: translateY(-2px) scale(1.005); opacity: 1; }
+  82%  { transform: translateY(1px) scale(0.998); }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes nugep-scale-spring {
+  0%   { transform: scale(0.92); opacity: 0; }
+  65%  { transform: scale(1.02); opacity: 1; }
+  82%  { transform: scale(0.99); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes nugep-fade-in-blur {
+  0%   { opacity: 0; filter: blur(6px); }
+  100% { opacity: 1; filter: blur(0); }
+}
+
+@keyframes nugep-stagger-in {
+  0%   { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes nugep-search-expand {
+  0%   { max-width: 280px; }
+  100% { max-width: 520px; }
+}
+
+@keyframes nugep-badge-pop {
+  0%   { transform: scale(0); }
+  65%  { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+@keyframes nugep-rotate-subtle {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes nugep-border-flow {
+  0%, 100% { border-color: rgba(244, 178, 5, 0.18); }
+  50%       { border-color: rgba(244, 178, 5, 0.38); }
+}
+
+/* Classes de animação utilitárias — todas suavizadas */
+.anim-glow-pulse {
+  animation: nugep-glow-pulse 4s ease-in-out infinite;
+}
+
+.anim-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(244, 178, 5, 0.06) 25%,
+    rgba(244, 178, 5, 0.10) 50%,
+    rgba(244, 178, 5, 0.06) 75%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: nugep-shimmer 4s linear infinite;
+}
+
+.anim-breathe {
+  animation: nugep-breathe 5s ease-in-out infinite;
+}
+
+.anim-float {
+  animation: nugep-float 5s ease-in-out infinite;
+}
+
+.anim-slide-up-spring {
+  animation: nugep-slide-up-spring 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.anim-scale-spring {
+  animation: nugep-scale-spring 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.anim-fade-blur {
+  animation: nugep-fade-in-blur 0.3s ease-out both;
+}
+
+.anim-badge-pop {
+  animation: nugep-badge-pop 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.anim-border-flow {
+  animation: nugep-border-flow 3.5s ease-in-out infinite;
+}
+
+/* Stagger delays para itens de lista */
+.anim-stagger-1 { animation: nugep-stagger-in 0.35s ease-out 0.05s both; }
+.anim-stagger-2 { animation: nugep-stagger-in 0.35s ease-out 0.10s both; }
+.anim-stagger-3 { animation: nugep-stagger-in 0.35s ease-out 0.15s both; }
+.anim-stagger-4 { animation: nugep-stagger-in 0.35s ease-out 0.20s both; }
+.anim-stagger-5 { animation: nugep-stagger-in 0.35s ease-out 0.25s both; }
+.anim-stagger-6 { animation: nugep-stagger-in 0.35s ease-out 0.30s both; }
+.anim-stagger-7 { animation: nugep-stagger-in 0.35s ease-out 0.35s both; }
+.anim-stagger-8 { animation: nugep-stagger-in 0.35s ease-out 0.40s both; }
+
+/* Transição suave e expansão para a barra de busca */
+.search-container-wrap {
+  transition: max-width 0.5s cubic-bezier(0.16, 1, 0.3, 1), width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.search-bar-modern {
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.search-bar-modern.is-focused {
+  box-shadow: 0 0 0 1.5px rgba(244, 178, 5, 0.8),
+              0 0 32px rgba(244, 178, 5, 0.28),
+              0 14px 44px -8px rgba(15, 62, 140, 0.4),
+              0 24px 60px -12px rgba(0, 0, 0, 0.7);
+  border-color: rgba(244, 178, 5, 0.85) !important;
+  background: rgba(8, 11, 18, 0.88);
+  backdrop-filter: blur(40px) saturate(220%);
+  -webkit-backdrop-filter: blur(40px) saturate(220%);
+}
+
+.theme-light .search-bar-modern.is-focused {
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 0 0 1.5px rgba(15, 62, 140, 0.8),
+              0 0 30px rgba(15, 62, 140, 0.22),
+              0 14px 44px -8px rgba(15, 62, 140, 0.3),
+              0 24px 60px -12px rgba(0, 0, 0, 0.18);
+  border-color: rgba(15, 62, 140, 0.85) !important;
+}
+
+.search-bar-clicked {
+  animation: nugep-search-click 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* search-icon-active e search-glow-halo desativados — animações de cor removidas */
+.search-icon-active {
+  color: #F4B205 !important;
+}
+
+
+/* Tooltips modernas para ferramentas */
+.nugep-tooltip {
+  pointer-events: none;
+  position: absolute;
+  z-index: 60;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: 10px;
+  background: rgba(10, 14, 22, 0.94);
+  color: #F4B205;
+  border: 1px solid rgba(244, 178, 5, 0.35);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6), 0 0 10px rgba(244, 178, 5, 0.15);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  opacity: 0;
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.group:hover .nugep-tooltip {
+  opacity: 1;
+}
+
+/* Efeito de ripple em botões — sutil */
+.btn-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-ripple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--ripple-x, 50%) var(--ripple-y, 50%), rgba(244, 178, 5, 0.14), transparent 65%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.btn-ripple:active::after {
+  opacity: 1;
+}
+
+/* Hover elevação para cards e painéis — sutil */
+.hover-lift {
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 28px -6px rgba(0, 0, 0, 0.3);
+}
+
+/* Dropdown animado para busca — suave */
+.search-dropdown-enter {
+  animation: nugep-slide-up-spring 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: top center;
+}
+
+/* Modal moderno com entrada suave */
+.modal-backdrop-enter {
+  animation: nugep-fade-in-blur 0.25s ease-out both;
+}
+
+.modal-content-enter {
+  animation: nugep-scale-spring 0.38s cubic-bezier(0.22, 1, 0.36, 1) 0.04s both;
+}
+
+/* Botão com gradiente animado ao hover */
+.btn-gradient-hover {
+  background-size: 200% 100%;
+  background-position: 0% 0%;
+  transition: background-position 0.6s ease, transform 0.2s ease;
+}
+
+.btn-gradient-hover:hover {
+  background-position: 100% 0%;
+}
+
+/* Toggle switch animado */
+.toggle-modern {
+  transition: background-color 0.28s ease, box-shadow 0.28s ease;
+}
+
+.toggle-modern::after {
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Tooltip animado */
+.tooltip-anim {
+  animation: nugep-stagger-in 0.2s ease-out both;
+}
+
+/* divider-shimmer — animação de shimmer removida */
+.divider-shimmer {
+  position: relative;
+}
+
+
+/* Escalas de Interface */
+:root {
+  --ui-scale: 1;
+}
+
+.scale-compact {
+  --ui-scale: 0.85;
+}
+.scale-standard {
+  --ui-scale: 1;
+}
+.scale-expanded {
+  --ui-scale: 1.18;
+}
+
+.scale-compact .ui-scale-target {
+  zoom: 0.85;
+}
+.scale-standard .ui-scale-target {
+  zoom: 1;
+}
+.scale-expanded .ui-scale-target {
+  zoom: 1.18;
+}
+
+/* Remover fundo branco e bordas nativas do Popup do Mapbox */
+.mapboxgl-popup-content {
+  background: transparent !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+.mapboxgl-popup-tip {
+  display: none !important;
+}
+
+/* Custom Scrollbar com visual vítreo */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* Marca d'Água do NUGEP */
+.watermark-nugep {
+  position: relative;
+  overflow: hidden;
+}
+
+.watermark-nugep::before {
+  content: "NUGEP • NÚCLEO DE GESTÃO E PESQUISA";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-30deg);
+  font-size: 3rem;
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  color: rgba(15, 62, 140, 0.07);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Suporte de Alta Precisão para Impressão de Dossiê Oficial em PDF com Marca d'Água */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 10mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    overflow: visible !important;
+    height: auto !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 10pt;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Ocultar rigorosamente toda e qualquer interface do sistema na impressão */
+  .no-print,
+  .no-print *,
+  nav,
+  aside,
+  header,
+  footer,
+  form,
+  button,
+  input,
+  select,
+  textarea,
+  .mapboxgl-map,
+  .mapboxgl-canvas-container,
+  .mapboxgl-control-container,
+  .mapboxgl-ctrl,
+  .liquid-glass,
+  .liquid-glass-subtle,
+  .liquid-glass-pop,
+  .ui-scale-target {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  /* Exibir exclusivamente o documento oficial de impressão */
+  .print-only {
+    display: block !important;
+    visibility: visible !important;
+    position: relative !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #111827 !important;
+    page-break-after: avoid !important;
+  }
+
+  .print-only * {
+    visibility: visible !important;
+  }
+
+  /* Marca d'água no documento impresso - sem vazar para 2ª página */
+  .print-watermark-bg {
+    position: absolute !important;
+    inset: 0 !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
+    z-index: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .print-watermark-text {
+    transform: rotate(-30deg) !important;
+    font-size: 32pt !important;
+    font-weight: 900 !important;
+    letter-spacing: 0.2em !important;
+    color: rgba(15, 62, 140, 0.06) !important;
+    text-transform: uppercase !important;
+    pointer-events: none !important;
+    text-align: center !important;
+    line-height: 1.3 !important;
+    white-space: pre-wrap !important;
+  }
+
+  .print-page-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+}
+
+
