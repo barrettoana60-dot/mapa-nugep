@@ -1377,9 +1377,8 @@ export default function HoloMapPlatform() {
           <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-[#0F3E8C]/30 border border-[#F4B205]/40 flex items-center justify-center overflow-hidden p-0.5 group-hover:border-[#F4B205]/70 transition-all duration-300">
             <img src={NUGEP_LOGO} alt="NUGEP MAPS" className="w-full h-full object-contain filter drop-shadow group-hover:scale-110 transition-transform duration-300" />
           </div>
-          <div className="flex flex-col leading-none">
-            <div className="flex items-center gap-1.5 font-bold tracking-[0.12em] text-xs sm:text-sm text-white"><span>NUGEP</span><span className="text-[#F4B205]">MAPS</span></div>
-            <span className="mt-1 hidden text-[9px] font-medium tracking-normal text-gray-500 lg:block">Gestão territorial</span>
+          <div className="flex items-center gap-1.5 font-bold tracking-[0.12em] text-xs sm:text-sm text-white">
+            <span>NUGEP</span><span className="text-[#F4B205]">MAPS</span>
           </div>
         </div>
 
@@ -1708,7 +1707,6 @@ export default function HoloMapPlatform() {
                   ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
                   : 'text-gray-300 hover:text-white hover:bg-white/10 hover:scale-110'
               }`}
-              title="Territórios e Pontos Demarcados"
             >
               <Hexagon size={19} />
             </button>
@@ -1717,14 +1715,13 @@ export default function HoloMapPlatform() {
                 {demarcatedTerritories.length + objetos.length}
               </span>
             )}
-            <div className="hidden md:block nugep-tooltip left-13">Territórios & Pontos</div>
+            <div className="hidden md:block nugep-tooltip left-full ml-3.5 top-1/2">Territórios & Pontos</div>
           </div>
 
           {/* Importar Planilha */}
           <div className="relative group flex items-center justify-center">
             <label 
               className="w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 active:scale-90 transition-all duration-300 hover:scale-110 cursor-pointer relative"
-              title="Importar Planilha (CSV / Excel)"
             >
               {isProcessing ? (
                 <div className="w-4 h-4 border-2 border-[#F4B205] border-t-transparent rounded-full animate-spin" />
@@ -1740,7 +1737,7 @@ export default function HoloMapPlatform() {
                 disabled={isProcessing}
               />
             </label>
-            <div className="hidden md:block nugep-tooltip left-13">Importar Planilha</div>
+            <div className="hidden md:block nugep-tooltip left-full ml-3.5 top-1/2">Importar Planilha</div>
           </div>
 
           {/* Camadas 3D e Satélite */}
@@ -1752,11 +1749,10 @@ export default function HoloMapPlatform() {
                   ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
                   : 'text-gray-300 hover:text-white hover:bg-white/10 hover:scale-110'
               }`}
-              title="Camadas 3D & Satélite"
             >
               <Layers size={19} />
             </button>
-            <div className="hidden md:block nugep-tooltip left-13">Camadas & 3D</div>
+            <div className="hidden md:block nugep-tooltip left-full ml-3.5 top-1/2">Camadas & 3D</div>
           </div>
         </div>
 
@@ -1771,11 +1767,10 @@ export default function HoloMapPlatform() {
                   ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
                   : 'text-gray-300 hover:text-white hover:bg-white/10 hover:scale-110 hover:rotate-45'
               }`}
-              title="Configurações"
             >
               <Settings size={19} />
             </button>
-            <div className="hidden md:block nugep-tooltip left-13">Configurações</div>
+            <div className="hidden md:block nugep-tooltip left-full ml-3.5 top-1/2">Configurações</div>
           </div>
 
           {/* Sobre / Informações */}
@@ -1787,11 +1782,10 @@ export default function HoloMapPlatform() {
                   ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
                   : 'text-gray-300 hover:text-white hover:bg-white/10 hover:scale-110'
               }`}
-              title="Sobre a Plataforma"
             >
               <Info size={19} />
             </button>
-            <div className="hidden md:block nugep-tooltip left-13">Sobre o NUGEP MAPS</div>
+            <div className="hidden md:block nugep-tooltip left-full ml-3.5 top-1/2">Sobre o NUGEP MAPS</div>
           </div>
         </div>
       </nav>
@@ -1811,7 +1805,6 @@ export default function HoloMapPlatform() {
                 ? 'bg-[#0F3E8C] text-[#F4B205] border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse'
                 : 'text-gray-300 hover:text-white hover:bg-white/10 hover:scale-110'
             }`}
-            title="Ferramentas"
           >
             {activeTool === 'point' ? (
               <MapPin size={18} />
@@ -1827,7 +1820,7 @@ export default function HoloMapPlatform() {
             )}
           </button>
           {!isToolsOpen && (
-            <div className="hidden md:block nugep-tooltip right-13">Ferramentas</div>
+            <div className="hidden md:block nugep-tooltip right-full mr-3.5 top-1/2">Ferramentas</div>
           )}
         </div>
 
