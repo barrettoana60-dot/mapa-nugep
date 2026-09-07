@@ -2345,18 +2345,36 @@ export default function HoloMapPlatform() {
 
           {searchedLocation && (
             <Marker longitude={searchedLocation.lng} latitude={searchedLocation.lat} anchor="bottom">
-              <div className="relative flex flex-col items-center pointer-events-none">
-                <div className="absolute -top-2 w-10 h-10 rounded-full bg-[#F4B205]/25 animate-ping" />
-                <div className="relative w-9 h-9 rounded-full bg-[#F4B205] text-[#0F3E8C] border-2 border-white shadow-xl flex items-center justify-center">
-                  <Search size={16} strokeWidth={3} />
+              <div className="relative flex flex-col items-center pointer-events-auto select-none">
+                {/* Badge informativa do local com botão de fechar */}
+                <div className="relative mb-1.5 max-w-64 px-2.5 py-1.5 rounded-xl bg-[#050608]/92 text-white border border-[#F4B205]/60 shadow-[0_8px_24px_rgba(0,0,0,0.6)] flex items-center gap-2 backdrop-blur-md">
+                  <div className="flex flex-col min-w-0 pr-1">
+                    <span className="text-[11px] font-bold truncate max-w-[190px]">{searchedLocation.label}</span>
+                    {searchedLocation.category && (
+                      <span className="text-[9px] text-[#F4B205] font-semibold tracking-wide uppercase mt-0.5">
+                        {searchedLocation.category}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSearchedLocation(null);
+                    }}
+                    className="w-5 h-5 rounded-full bg-white/10 hover:bg-rose-500/80 text-gray-300 hover:text-white flex items-center justify-center transition-colors shrink-0"
+                    title="Remover marcador"
+                  >
+                    <X size={11} strokeWidth={2.5} />
+                  </button>
                 </div>
-                <div className="mt-1 max-w-56 px-2.5 py-1 rounded-lg bg-[#050608]/90 text-[10px] font-bold text-white border border-[#F4B205]/60 shadow-xl flex flex-col items-center text-center backdrop-blur-md">
-                  <span className="truncate max-w-full">{searchedLocation.label}</span>
-                  {searchedLocation.category && (
-                    <span className="text-[8.5px] text-[#F4B205] font-semibold tracking-wide uppercase mt-0.5">
-                      {searchedLocation.category}
-                    </span>
-                  )}
+
+                {/* Marcador no ponto exato (estático, sem piscar ou pulsar) */}
+                <div className="relative flex flex-col items-center">
+                  <div className="w-8 h-8 rounded-full bg-[#0F3E8C] text-[#F4B205] border-2 border-[#F4B205] shadow-lg flex items-center justify-center">
+                    <MapPin size={16} strokeWidth={2.5} />
+                  </div>
+                  <div className="w-1.5 h-1.5 bg-[#F4B205] rounded-full shadow-sm mt-0.5" />
                 </div>
               </div>
             </Marker>
