@@ -274,9 +274,6 @@ export default function HoloMapPlatform() {
   const [activeTerritory, setActiveTerritory] = useState<DemarcatedTerritory | null>(null);
   const [exportTarget, setExportTarget] = useState<'territory' | 'point'>('territory');
   const [territoriesListTab, setTerritoriesListTab] = useState<'territories' | 'points'>('territories');
-  const [workspaceTab, setWorkspaceTab] = useState<'data' | 'layers'>('data');
-  const [workspaceQuery, setWorkspaceQuery] = useState('');
-  const [showMobileWorkspace, setShowMobileWorkspace] = useState(false);
 
   // Modos de ferramentas
   const [activeTool, setActiveTool] = useState<'navigate' | 'point' | 'measure' | 'polygon'>('navigate');
@@ -493,7 +490,7 @@ export default function HoloMapPlatform() {
     }
     mapRef.current?.fitBounds(
       [[west, south], [east, north]],
-      { padding: typeof window !== 'undefined' && window.innerWidth >= 768 ? { top: 110, right: 130, bottom: 100, left: 350 } : 64, duration: 900, maxZoom: 15 }
+      { padding: typeof window !== 'undefined' && window.innerWidth >= 768 ? { top: 110, right: 130, bottom: 100, left: 90 } : 64, duration: 900, maxZoom: 15 }
     );
   }, []);
 
@@ -1258,25 +1255,6 @@ export default function HoloMapPlatform() {
       }))
   }), [objetos]);
 
-  const projectDatasets = useMemo(() => {
-    const grouped = new globalThis.Map<string, number>();
-    objetos.forEach(point => {
-      const name = point.datasetName || 'Pontos manuais';
-      grouped.set(name, (grouped.get(name) || 0) + 1);
-    });
-    return Array.from(grouped, ([name, count]) => ({ name, count }));
-  }, [objetos]);
-
-  const visibleWorkspacePoints = useMemo(() => {
-    const query = workspaceQuery.trim().toLocaleLowerCase('pt-BR');
-    if (!query) return objetos.slice(0, 7);
-    return objetos.filter(point => [point.titulo, point.objeto, point.autor, point.anotacoes, ...Object.values(point.extraProps || {})]
-      .filter(Boolean)
-      .join(' ')
-      .toLocaleLowerCase('pt-BR')
-      .includes(query)).slice(0, 7);
-  }, [objetos, workspaceQuery]);
-
   const focusPoint = (point: ObjetoCultural) => {
     setSelectedPoint(point);
     setActiveTerritory(null);
@@ -1695,274 +1673,110 @@ export default function HoloMapPlatform() {
         </div>
       </div>
 
-      {/* PAINEL DE TRABALHO: dados e camadas ficam sempre visíveis no desktop. */}
-      <aside
+      {/* =========================================================================
+          ESPAÇO DE TRABALHO: DOCK VERTICAL EM CÁPSULA (MODELO EXATO DA IMAGEM)
+          ========================================================================= */}
+      <nav 
         style={uiZoomStyle}
-        className="hidden md:flex ui-scale-target fixed left-4 top-[5.75rem] bottom-4 z-40 w-[288px] flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#101317]/94 shadow-[0_18px_55px_rgba(0,0,0,0.38)] backdrop-blur-xl pointer-events-auto origin-top-left"
+        className="ui-scale-target fixed left-2.5 sm:left-4 top-[5.25rem] bottom-4 z-40 w-11 sm:w-13 liquid-glass rounded-full border border-white/15 shadow-[0_12px_40px_rgba(0,0,0,0.5)] flex flex-col items-center justify-between py-3.5 sm:py-4 pointer-events-auto origin-left anim-slide-up-spring overflow-visible"
       >
-        {/* Cabeçalho */}
-        <div className="border-b border-white/10 px-4 pt-3.5 pb-3">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#F4B205]">Espaço de trabalho</p>
-              <h2 className="mt-0.5 text-sm font-semibold text-white leading-tight">Projeto territorial</h2>
-            </div>
-            <button onClick={() => setActiveModal('settings')} className="rounded-lg p-1.5 text-gray-500 transition hover:bg-white/10 hover:text-white" title="Configurações">
-              <Settings size={15} />
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/20 p-1">
-            <button onClick={() => setWorkspaceTab('data')} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${workspaceTab === 'data' ? 'bg-[#0F3E8C] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Dados</button>
-            <button onClick={() => setWorkspaceTab('layers')} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${workspaceTab === 'layers' ? 'bg-[#0F3E8C] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Camadas</button>
-          </div>
-        </div>
-
-        {workspaceTab === 'data' ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 custom-scrollbar">
-            {/* Importar planilha */}
+        {/* Grupo Superior: Territórios/Pontos, Importar Planilha, Camadas */}
+        <div className="flex flex-col items-center gap-3 sm:gap-3.5 overflow-visible">
+          {/* Territórios e Pontos Demarcados (Lista) */}
+          <div className="relative group flex items-center justify-center">
             <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isProcessing}
-              className="flex w-full items-center gap-2.5 rounded-xl bg-gradient-to-r from-[#F4B205] to-[#F57602] px-3.5 py-2.5 text-left text-[#0F3E8C] shadow-lg transition hover:brightness-110 disabled:opacity-60"
+              onClick={() => setActiveModal(prev => prev === 'territories_list' ? null : 'territories_list')}
+              className={`w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center active:scale-90 transition-all duration-300 ${
+                activeModal === 'territories_list' 
+                  ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                  : 'text-gray-300 hover:text-white hover:bg-white/10 hover:scale-110'
+              }`}
+              title="Territórios e Pontos Demarcados"
+            >
+              <Hexagon size={19} />
+            </button>
+            {(demarcatedTerritories.length > 0 || objetos.length > 0) && (
+              <span className="absolute -top-1 -right-1 z-30 min-w-4.5 h-4.5 px-1 bg-[#F4B205] text-black text-[9px] font-black rounded-full flex items-center justify-center shadow-lg anim-badge-pop pointer-events-none ring-2 ring-black/70">
+                {demarcatedTerritories.length + objetos.length}
+              </span>
+            )}
+            <div className="hidden md:block nugep-tooltip left-13">Territórios & Pontos</div>
+          </div>
+
+          {/* Importar Planilha */}
+          <div className="relative group flex items-center justify-center">
+            <label 
+              className="w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 active:scale-90 transition-all duration-300 hover:scale-110 cursor-pointer relative"
+              title="Importar Planilha (CSV / Excel)"
             >
               {isProcessing ? (
-                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[#0F3E8C] border-t-transparent shrink-0" />
+                <div className="w-4 h-4 border-2 border-[#F4B205] border-t-transparent rounded-full animate-spin" />
               ) : (
-                <FileSpreadsheet size={15} className="shrink-0" />
+                <Upload size={19} />
               )}
-              <div className="min-w-0">
-                <span className="block text-xs font-bold">{isProcessing ? 'Processando...' : 'Importar planilha'}</span>
-                <span className="block text-[10px] font-medium opacity-75">CSV · XLSX · pontos no mapa</span>
-              </div>
+              <input 
+                ref={fileInputRef}
+                type="file" 
+                accept=".csv,.tsv,.txt,.xlsx,.xls" 
+                className="hidden" 
+                onChange={handleSpreadsheetUpload}
+                disabled={isProcessing}
+              />
+            </label>
+            <div className="hidden md:block nugep-tooltip left-13">Importar Planilha</div>
+          </div>
+
+          {/* Camadas 3D e Satélite */}
+          <div className="relative group flex items-center justify-center">
+            <button
+              onClick={() => setActiveModal(prev => prev === 'layers' ? null : 'layers')}
+              className={`w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center active:scale-90 transition-all duration-300 ${
+                activeModal === 'layers' 
+                  ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                  : 'text-gray-300 hover:text-white hover:bg-white/10 hover:scale-110'
+              }`}
+              title="Camadas 3D & Satélite"
+            >
+              <Layers size={19} />
             </button>
-            <input ref={fileInputRef} type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" className="hidden" onChange={handleSpreadsheetUpload} disabled={isProcessing} />
-
-            {/* Estatísticas compactas */}
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => { setTerritoriesListTab('points'); setActiveModal('territories_list'); }} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2.5 text-left transition hover:border-[#F4B205]/45 hover:bg-white/[0.07]">
-                <div className="flex items-center gap-1.5 mb-1"><MapPin size={13} className="text-[#F4B205]" /><span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Pontos</span></div>
-                <p className="text-xl font-bold text-white leading-none">{objetos.length}</p>
-              </button>
-              <button onClick={() => { setTerritoriesListTab('territories'); setActiveModal('territories_list'); }} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2.5 text-left transition hover:border-[#F4B205]/45 hover:bg-white/[0.07]">
-                <div className="flex items-center gap-1.5 mb-1"><Hexagon size={13} className="text-[#F4B205]" /><span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Territórios</span></div>
-                <p className="text-xl font-bold text-white leading-none">{demarcatedTerritories.length}</p>
-              </button>
-            </div>
-
-            {/* Lista unificada com busca */}
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Registros no mapa</p>
-                <button onClick={() => setActiveModal('territories_list')} className="text-[11px] font-semibold text-[#F4B205] hover:text-[#fbc337]">Ver todos</button>
-              </div>
-              <div className="relative">
-                <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                <input value={workspaceQuery} onChange={event => setWorkspaceQuery(event.target.value)} placeholder="Filtrar registros…" className="w-full rounded-lg border border-white/10 bg-black/20 py-1.5 pl-8 pr-3 text-xs text-white outline-none placeholder:text-gray-600 focus:border-[#F4B205]/60" />
-              </div>
-              <div className="space-y-1">
-                {visibleWorkspacePoints.map(point => (
-                  <button key={point.id} onClick={() => focusPoint(point)} className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition ${selectedPoint?.id === point.id ? 'border-[#F4B205]/55 bg-[#0F3E8C]/35' : 'border-transparent bg-white/[0.035] hover:border-white/10 hover:bg-white/[0.07]'}`}>
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#0F3E8C]/45 text-[#F4B205]"><MapPin size={12} /></span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-gray-100">{point.titulo}</span><span className="block truncate text-[10px] text-gray-500">{point.objeto || point.datasetName || 'Georreferenciado'}</span></span>
-                  </button>
-                ))}
-                {(!workspaceQuery.trim() ? demarcatedTerritories.slice(0, 3) : demarcatedTerritories.filter(t => t.nome.toLowerCase().includes(workspaceQuery.toLowerCase())).slice(0, 3)).map(territory => (
-                  <button key={territory.id} onClick={() => focusTerritory(territory)} className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition ${activeTerritory?.id === territory.id ? 'border-[#F4B205]/55 bg-[#0F3E8C]/35' : 'border-transparent bg-white/[0.035] hover:border-white/10 hover:bg-white/[0.07]'}`}>
-                    <span className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center" style={{ backgroundColor: territory.cor + '33', border: `1.5px solid ${territory.cor}66` }}><span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: territory.cor }} /></span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-gray-100">{territory.nome}</span><span className="text-[10px] text-gray-500">{territory.areaHectares.toLocaleString('pt-BR')} ha · {territory.pontos.length} vértices</span></span>
-                  </button>
-                ))}
-                {!visibleWorkspacePoints.length && !demarcatedTerritories.length && (
-                  <div className="rounded-lg border border-dashed border-white/10 p-4 text-center text-xs text-gray-500">Nenhum registro no mapa.</div>
-                )}
-              </div>
-            </div>
-
-            {/* Datasets importados – compacto */}
-            {projectDatasets.length > 0 && (
-              <div>
-                <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Conjuntos importados</p>
-                <div className="flex flex-wrap gap-1">{projectDatasets.map(dataset => <span key={dataset.name} className="max-w-full truncate rounded-md border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] text-gray-400" title={dataset.name}>{dataset.name} · {dataset.count}</span>)}</div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 custom-scrollbar">
-            {/* Mapa base */}
-            <div>
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Mapa base</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setActiveLayers(prev => prev.filter(layer => layer !== 'satellite'))} className={`rounded-xl border p-3 text-left text-xs font-semibold transition ${!activeLayers.includes('satellite') ? 'border-[#F4B205]/60 bg-[#0F3E8C]/35 text-white' : 'border-white/10 bg-white/[0.035] text-gray-400 hover:bg-white/[0.07]'}`}><Globe size={16} className="mb-2 text-[#F4B205]" />Vetorial</button>
-                <button onClick={() => setActiveLayers(prev => prev.includes('satellite') ? prev.filter(l => l !== 'satellite') : [...prev, 'satellite'])} className={`rounded-xl border p-3 text-left text-xs font-semibold transition ${activeLayers.includes('satellite') ? 'border-[#F4B205]/60 bg-[#0F3E8C]/35 text-white' : 'border-white/10 bg-white/[0.035] text-gray-400 hover:bg-white/[0.07]'}`}><Mountain size={16} className="mb-2 text-[#F4B205]" />Satélite</button>
-              </div>
-            </div>
-
-            {/* Dados visíveis */}
-            <div>
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Dados do projeto</p>
-              <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.035]">
-                {[
-                  { key: 'markers', label: 'Pontos', icon: MapPin, count: objetos.length },
-                  { key: 'territories', label: 'Territórios', icon: Hexagon, count: demarcatedTerritories.length }
-                ].map(item => {
-                  const Icon = item.icon;
-                  const enabled = activeLayers.includes(item.key);
-                  return (
-                    <button key={item.key} onClick={() => toggleLayer(item.key)} className="flex w-full items-center gap-3 border-b border-white/10 px-3 py-2.5 text-left last:border-0 hover:bg-white/[0.045]">
-                      <Icon size={15} className="text-[#F4B205] shrink-0" />
-                      <span className="flex-1 text-xs font-medium text-gray-200">{item.label}<span className="ml-1.5 text-[10px] text-gray-500">({item.count})</span></span>
-                      <span className={`relative h-5 w-9 rounded-full transition ${enabled ? 'bg-[#0F3E8C]' : 'bg-white/15'}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition ${enabled ? 'left-[18px]' : 'left-0.5'}`} /></span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Visualização 3D */}
-            <div>
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Visualização</p>
-              <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.035]">
-                {[
-                  { key: 'relevo', label: 'Relevo 3D', icon: Mountain },
-                  { key: 'buildings', label: 'Edificações 3D', icon: Building2 },
-                  { key: 'atmosphere', label: 'Atmosfera', icon: CloudSun }
-                ].map(item => {
-                  const Icon = item.icon;
-                  const enabled = activeLayers.includes(item.key);
-                  return (
-                    <button key={item.key} onClick={() => toggleLayer(item.key)} className="flex w-full items-center gap-3 border-b border-white/10 px-3 py-2.5 text-left last:border-0 hover:bg-white/[0.045]">
-                      <Icon size={15} className="text-gray-400 shrink-0" />
-                      <span className="flex-1 text-xs font-medium text-gray-200">{item.label}</span>
-                      <span className={`h-2.5 w-2.5 rounded-full transition ${enabled ? 'bg-emerald-400' : 'bg-gray-600'}`} />
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="flex items-center justify-between border-t border-white/10 px-4 py-2.5">
-          <button onClick={() => setActiveModal('info')} className="flex items-center gap-1.5 text-[11px] font-medium text-gray-500 transition hover:text-white"><Info size={13} /> Sobre</button>
-          <button onClick={() => flyToPreset('nugep')} className="text-[11px] font-semibold text-[#F4B205] hover:text-[#fbc337]">Centralizar</button>
-        </div>
-      </aside>
-
-      {/* Mobile workspace drawer */}
-      {showMobileWorkspace && (
-        <div className="fixed inset-0 z-50 md:hidden flex flex-col justify-end pointer-events-auto">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowMobileWorkspace(false)} />
-          <div className="relative rounded-t-3xl border-t border-white/15 bg-[#101317]/98 max-h-[80vh] flex flex-col overflow-hidden shadow-2xl">
-            <div className="flex justify-center pt-3 pb-1 shrink-0">
-              <div className="w-10 h-1 rounded-full bg-white/20" />
-            </div>
-            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 shrink-0">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#F4B205]">Espaço de trabalho</p>
-                <h2 className="text-sm font-semibold text-white leading-tight">Projeto territorial</h2>
-              </div>
-              <button onClick={() => setShowMobileWorkspace(false)} className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition"><X size={18} /></button>
-            </div>
-            <div className="px-4 pt-3 shrink-0">
-              <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/20 p-1">
-                <button onClick={() => setWorkspaceTab('data')} className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${workspaceTab === 'data' ? 'bg-[#0F3E8C] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Dados</button>
-                <button onClick={() => setWorkspaceTab('layers')} className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${workspaceTab === 'layers' ? 'bg-[#0F3E8C] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>Camadas</button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-              {workspaceTab === 'data' ? (
-                <div className="flex flex-col gap-3">
-                  <button onClick={() => { fileInputRef.current?.click(); setShowMobileWorkspace(false); }} disabled={isProcessing} className="flex w-full items-center gap-3 rounded-xl bg-gradient-to-r from-[#F4B205] to-[#F57602] px-4 py-3 text-left text-[#0F3E8C] shadow-lg transition hover:brightness-110 disabled:opacity-60">
-                    {isProcessing ? <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[#0F3E8C] border-t-transparent shrink-0" /> : <FileSpreadsheet size={16} className="shrink-0" />}
-                    <div><span className="block text-xs font-bold">{isProcessing ? 'Processando...' : 'Importar planilha'}</span><span className="block text-[10px] opacity-75">CSV · XLSX · pontos no mapa</span></div>
-                  </button>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => { setTerritoriesListTab('points'); setActiveModal('territories_list'); setShowMobileWorkspace(false); }} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-3 text-left transition hover:border-[#F4B205]/45">
-                      <div className="flex items-center gap-1.5 mb-1"><MapPin size={13} className="text-[#F4B205]" /><span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Pontos</span></div>
-                      <p className="text-2xl font-bold text-white">{objetos.length}</p>
-                    </button>
-                    <button onClick={() => { setTerritoriesListTab('territories'); setActiveModal('territories_list'); setShowMobileWorkspace(false); }} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-3 text-left transition hover:border-[#F4B205]/45">
-                      <div className="flex items-center gap-1.5 mb-1"><Hexagon size={13} className="text-[#F4B205]" /><span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Territórios</span></div>
-                      <p className="text-2xl font-bold text-white">{demarcatedTerritories.length}</p>
-                    </button>
-                  </div>
-                  <div className="space-y-1.5">
-                    {objetos.slice(0, 5).map(point => (
-                      <button key={point.id} onClick={() => { focusPoint(point); setShowMobileWorkspace(false); }} className="flex w-full items-center gap-2.5 rounded-xl border border-transparent bg-white/[0.035] px-3 py-2.5 text-left transition hover:border-white/10 hover:bg-white/[0.07]">
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0F3E8C]/45 text-[#F4B205]"><MapPin size={14} /></span>
-                        <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-gray-100">{point.titulo}</span><span className="block truncate text-[11px] text-gray-500">{point.objeto || 'Ponto georreferenciado'}</span></span>
-                      </button>
-                    ))}
-                    {demarcatedTerritories.slice(0, 3).map(territory => (
-                      <button key={territory.id} onClick={() => { focusTerritory(territory); setShowMobileWorkspace(false); }} className="flex w-full items-center gap-2.5 rounded-xl border border-transparent bg-white/[0.035] px-3 py-2.5 text-left transition hover:border-white/10 hover:bg-white/[0.07]">
-                        <span className="h-8 w-8 shrink-0 rounded-lg flex items-center justify-center" style={{ backgroundColor: territory.cor + '33', border: `1.5px solid ${territory.cor}66` }}><span className="w-3 h-3 rounded-sm" style={{ backgroundColor: territory.cor }} /></span>
-                        <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-gray-100">{territory.nome}</span><span className="text-[11px] text-gray-500">{territory.areaHectares.toLocaleString('pt-BR')} ha</span></span>
-                      </button>
-                    ))}
-                    {!objetos.length && !demarcatedTerritories.length && (
-                      <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-gray-500">Nenhum registro ainda.</div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-4">
-                  <div>
-                    <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Mapa base</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button onClick={() => setActiveLayers(prev => prev.filter(l => l !== 'satellite'))} className={`rounded-xl border p-3 text-left text-xs font-semibold transition ${!activeLayers.includes('satellite') ? 'border-[#F4B205]/60 bg-[#0F3E8C]/35 text-white' : 'border-white/10 bg-white/[0.035] text-gray-400'}`}><Globe size={17} className="mb-2 text-[#F4B205]" />Vetorial</button>
-                      <button onClick={() => setActiveLayers(prev => prev.includes('satellite') ? prev.filter(l => l !== 'satellite') : [...prev, 'satellite'])} className={`rounded-xl border p-3 text-left text-xs font-semibold transition ${activeLayers.includes('satellite') ? 'border-[#F4B205]/60 bg-[#0F3E8C]/35 text-white' : 'border-white/10 bg-white/[0.035] text-gray-400'}`}><Mountain size={17} className="mb-2 text-[#F4B205]" />Satélite</button>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Camadas</p>
-                    <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.035]">
-                      {[
-                        { key: 'markers', label: 'Pontos', icon: MapPin, count: objetos.length },
-                        { key: 'territories', label: 'Territórios', icon: Hexagon, count: demarcatedTerritories.length },
-                        { key: 'relevo', label: 'Relevo 3D', icon: Mountain, count: null },
-                        { key: 'buildings', label: 'Edificações', icon: Building2, count: null },
-                      ].map(item => {
-                        const Icon = item.icon;
-                        const enabled = activeLayers.includes(item.key);
-                        return (
-                          <button key={item.key} onClick={() => toggleLayer(item.key)} className="flex w-full items-center gap-3 border-b border-white/10 px-4 py-3 text-left last:border-0 hover:bg-white/[0.045]">
-                            <Icon size={16} className="text-[#F4B205] shrink-0" />
-                            <span className="flex-1 text-sm font-medium text-gray-200">{item.label}{item.count !== null && <span className="ml-1.5 text-[11px] text-gray-500">({item.count})</span>}</span>
-                            <span className={`relative h-5 w-9 rounded-full transition ${enabled ? 'bg-[#0F3E8C]' : 'bg-white/15'}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition ${enabled ? 'left-[18px]' : 'left-0.5'}`} /></span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+            <div className="hidden md:block nugep-tooltip left-13">Camadas & 3D</div>
           </div>
         </div>
-      )}
 
-      {/* Barra de navegação mobile melhorada */}
-      <nav className="fixed inset-x-3 bottom-3 z-40 flex h-16 items-center justify-around rounded-2xl border border-white/15 bg-[#101317]/96 px-2 shadow-2xl backdrop-blur-xl md:hidden">
-        <button onClick={() => setShowMobileWorkspace(true)} className="flex flex-col items-center gap-0.5 rounded-xl px-3 py-2 text-gray-400 hover:text-[#F4B205] transition" title="Espaço de trabalho">
-          <Layers size={18} />
-          <span className="text-[9px] font-semibold">Dados</span>
-        </button>
-        <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center gap-0.5 rounded-xl bg-[#F4B205]/15 px-4 py-2 text-[#F4B205] ring-1 ring-[#F4B205]/40 transition hover:bg-[#F4B205]/25" title="Importar planilha">
-          <Upload size={18} />
-          <span className="text-[9px] font-semibold">Importar</span>
-        </button>
-        <button onClick={() => { setActiveTool(activeTool === 'point' ? 'navigate' : 'point'); if (activeTool !== 'point') showToast('Clique no mapa para criar um ponto.', 'info'); }} className={`flex flex-col items-center gap-0.5 rounded-xl px-3 py-2 transition ${activeTool === 'point' ? 'text-[#F4B205]' : 'text-gray-400 hover:text-white'}`} title="Adicionar ponto">
-          <MapPin size={18} />
-          <span className="text-[9px] font-semibold">Ponto</span>
-        </button>
-        <button onClick={() => setActiveModal('settings')} className="flex flex-col items-center gap-0.5 rounded-xl px-3 py-2 text-gray-400 hover:text-white transition" title="Configurações">
-          <Settings size={18} />
-          <span className="text-[9px] font-semibold">Config.</span>
-        </button>
-        <button onClick={() => flyToPreset('nugep')} className="flex flex-col items-center gap-0.5 rounded-xl px-3 py-2 text-gray-400 hover:text-[#F4B205] transition" title="Centralizar">
-          <Compass size={18} />
-          <span className="text-[9px] font-semibold">Norte</span>
-        </button>
+        {/* Grupo Inferior: Configurações, Informações */}
+        <div className="flex flex-col items-center gap-3 sm:gap-3.5">
+          {/* Configurações */}
+          <div className="relative group flex items-center justify-center">
+            <button
+              onClick={() => setActiveModal(prev => prev === 'settings' ? null : 'settings')}
+              className={`w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center active:scale-90 transition-all duration-300 ${
+                activeModal === 'settings' 
+                  ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                  : 'text-gray-300 hover:text-white hover:bg-white/10 hover:scale-110 hover:rotate-45'
+              }`}
+              title="Configurações"
+            >
+              <Settings size={19} />
+            </button>
+            <div className="hidden md:block nugep-tooltip left-13">Configurações</div>
+          </div>
+
+          {/* Sobre / Informações */}
+          <div className="relative group flex items-center justify-center">
+            <button
+              onClick={() => setActiveModal(prev => prev === 'info' ? null : 'info')}
+              className={`w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full flex items-center justify-center active:scale-90 transition-all duration-300 ${
+                activeModal === 'info' 
+                  ? 'bg-[#0F3E8C] text-[#F4B205] border border-[#F4B205]/50 shadow-lg shadow-[#0F3E8C]/40 anim-glow-pulse' 
+                  : 'text-gray-300 hover:text-white hover:bg-white/10 hover:scale-110'
+              }`}
+              title="Sobre a Plataforma"
+            >
+              <Info size={19} />
+            </button>
+            <div className="hidden md:block nugep-tooltip left-13">Sobre o NUGEP MAPS</div>
+          </div>
+        </div>
       </nav>
 
       {/* Ferramentas de edição */}
