@@ -84,7 +84,7 @@ type ImportedCoordinate = {
 // Token Mapbox
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 if (!MAPBOX_TOKEN && typeof window !== 'undefined') {
-  console.error('NUGEP MAPS: NEXT_PUBLIC_MAPBOX_TOKEN não configurado.');
+  console.error('NUGEP MAPS: NEXT_PUBLIC_MAPBOX_TOKEN pk.eyJ1Ijoiam9wcGkiLCJhIjoiY210c3VyODYzMDJ4bjJ6cTQ0aG51dHYwcSJ9.Oekl-_45YuUzHvIFg2o01A');
 }
 // Cálculo de distância geodésica (Haversine em km)
 function calculateDistance(points: number[][]): number {
