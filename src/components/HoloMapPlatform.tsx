@@ -82,11 +82,10 @@ type ImportedCoordinate = {
 };
 
 // Token Mapbox
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 if (!MAPBOX_TOKEN && typeof window !== 'undefined') {
-  console.warn('NEXT_PUBLIC_MAPBOX_TOKEN não definido — configure em .env.local');
+  console.error('NUGEP MAPS: NEXT_PUBLIC_MAPBOX_TOKEN não configurado.');
 }
-
 // Cálculo de distância geodésica (Haversine em km)
 function calculateDistance(points: number[][]): number {
   if (points.length < 2) return 0;
