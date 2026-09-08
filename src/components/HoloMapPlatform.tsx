@@ -82,10 +82,10 @@ type ImportedCoordinate = {
 };
 
 // Token Mapbox
-const tk1 = 'pk.eyJ1Ijoiam9wcGkiLCJhIjoiY21w';
-const tk2 = 'OTN4MWFwMGo3bzJ1cG9xbnd2azk5ei';
-const tk3 = 'J9.w2MglW4vvG2zJh8wV7QxzQ';
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || (tk1 + tk2 + tk3);
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+if (!MAPBOX_TOKEN && typeof window !== 'undefined') {
+  console.warn('NEXT_PUBLIC_MAPBOX_TOKEN não definido — configure em .env.local');
+}
 
 // Cálculo de distância geodésica (Haversine em km)
 function calculateDistance(points: number[][]): number {
