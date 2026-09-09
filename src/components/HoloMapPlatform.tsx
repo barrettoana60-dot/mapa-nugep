@@ -11,7 +11,7 @@ import {
   RotateCcw, Hexagon, Globe, Building2, CloudSun,
   CheckCircle2, AlertCircle, FileText, MousePointer, Landmark,
   Printer, ShieldCheck, Undo2, ChevronRight, LocateFixed, Wrench,
-  GraduationCap
+  GraduationCap, Image as ImageIcon, BookOpen, Camera, Link as LinkIcon
 } from 'lucide-react';
 import { NUGEP_LOGO } from '../assets/logo';
 
@@ -47,6 +47,8 @@ export type ObjetoCultural = {
   altura: number;
   datasetName?: string;
   anotacoes?: string;
+  imagemUrl?: string;       // Foto ou registro visual do ponto (Base64 ou URL estilo Google Maps)
+  referenciaABNT?: string;  // Citação / Referência bibliográfica ou documental em norma ABNT NBR 6023
   extraProps?: Record<string, any>;
 };
 
@@ -81,11 +83,8 @@ type ImportedCoordinate = {
   index: number;
 };
 
-// Token Mapbox
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-if (!MAPBOX_TOKEN && typeof window !== 'undefined') {
-  console.error('NUGEP MAPS: NEXT_PUBLIC_MAPBOX_TOKEN não configurado.');
-}
+// Token Mapbox Oficial
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || 'pk.eyJ1Ijoiam9wcGkiLCJhIjoiY210c3VyODYzMDJ4bjJ6cTQ0aG51dHYwcSJ9.Oekl-_45YuUzHvIFg2o01A';
 // Cálculo de distância geodésica (Haversine em km)
 function calculateDistance(points: number[][]): number {
   if (points.length < 2) return 0;
@@ -2654,9 +2653,142 @@ export default function HoloMapPlatform() {
                   setSelectedPoint(updated);
                   setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
                 }}
-                rows={4}
+                rows={3}
                 placeholder="Insira anotações de campo, observações históricas, referências de tombamento ou parecer técnico..."
                 className="w-full bg-white/10 rounded-xl p-3 text-xs border border-white/10 outline-none focus:border-[#F4B205] resize-none custom-scrollbar"
+              />
+            </div>
+
+            {/* FOTOGRAFIA / IMAGEM DO LOCAL (ESTILO GOOGLE MAPS) */}
+            <div className="space-y-1.5 pt-1">
+              <label className="text-[10px] uppercase font-bold tracking-wider text-amber-400 flex items-center gap-1.5">
+                <Camera size={13} />
+                <span>Foto do Ponto (Estilo Google Maps)</span>
+              </label>
+
+              {selectedPoint.imagemUrl ? (
+                <div className="relative rounded-xl overflow-hidden border border-[#F4B205]/40 bg-black/40 group/img shadow-md">
+                  <img 
+                    src={selectedPoint.imagemUrl} 
+                    alt={selectedPoint.titulo} 
+                    className="w-full h-36 object-cover transition-transform duration-300 group-hover/img:scale-105" 
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent flex items-end justify-between p-2.5">
+                    <span className="text-[10px] font-mono text-amber-300 truncate max-w-[180px]">Foto registrada</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = { ...selectedPoint, imagemUrl: undefined };
+                        setSelectedPoint(updated);
+                        setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
+                        showToast('Foto removida', 'info');
+                      }}
+                      className="px-2 py-1 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white text-[10px] font-bold flex items-center gap-1 shadow transition"
+                      title="Excluir imagem"
+                    >
+                      <Trash2 size={11} />
+                      <span>Remover</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-black/20 border border-dashed border-white/20 hover:border-[#F4B205]/50 transition flex flex-col items-center justify-center gap-2">
+                  <label className="w-full cursor-pointer flex flex-col items-center justify-center gap-1.5 py-1.5">
+                    <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[#F4B205]">
+                      <Upload size={14} />
+                    </div>
+                    <span className="text-[11px] font-bold text-white">Carregar foto do dispositivo</span>
+                    <span className="text-[9px] opacity-50">PNG, JPG, WEBP até 10MB</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        if (file.size > 10 * 1024 * 1024) {
+                          showToast('A imagem deve ter no máximo 10MB.', 'error');
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = ev => {
+                          const base64 = ev.target?.result as string;
+                          const updated = { ...selectedPoint, imagemUrl: base64 };
+                          setSelectedPoint(updated);
+                          setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
+                          showToast('Foto do local adicionada!', 'success');
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                  </label>
+                  <div className="w-full flex items-center gap-2 pt-2 border-t border-white/10">
+                    <LinkIcon size={12} className="opacity-40 shrink-0" />
+                    <input
+                      type="url"
+                      placeholder="Ou cole a URL da imagem (https://...)"
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const val = (e.currentTarget.value || '').trim();
+                          if (val) {
+                            const updated = { ...selectedPoint, imagemUrl: val };
+                            setSelectedPoint(updated);
+                            setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
+                            showToast('URL da foto vinculada!', 'success');
+                          }
+                        }
+                      }}
+                      onBlur={e => {
+                        const val = (e.currentTarget.value || '').trim();
+                        if (val && val !== selectedPoint.imagemUrl) {
+                          const updated = { ...selectedPoint, imagemUrl: val };
+                          setSelectedPoint(updated);
+                          setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
+                          showToast('URL da foto vinculada!', 'success');
+                        }
+                      }}
+                      className="w-full bg-white/5 rounded-lg px-2.5 py-1 text-[11px] border border-white/10 outline-none focus:border-[#F4B205] text-white"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* REFERÊNCIA DOCUMENTAL E BIBLIOGRÁFICA (NORMA ABNT NBR 6023) */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-amber-400 flex items-center gap-1.5">
+                  <BookOpen size={13} />
+                  <span>Referência Normativa (ABNT)</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const autorAbnt = (selectedPoint.autor || 'NUGEP').trim().toUpperCase();
+                    const tituloAbnt = selectedPoint.titulo || 'Registro Patrimonial Georreferenciado';
+                    const anoAbnt = selectedPoint.ano || new Date().getFullYear().toString();
+                    const generated = `${autorAbnt}. ${tituloAbnt}. Alagoas: NUGEP MAPS / UFAL, ${anoAbnt}. Coordenadas: ${selectedPoint.latitude.toFixed(6)}, ${selectedPoint.longitude.toFixed(6)}. Disponível em: Plataforma de Demarcação Territorial do NUGEP. Acesso em: ${new Date().toLocaleDateString('pt-BR')}.`;
+                    const updated = { ...selectedPoint, referenciaABNT: generated };
+                    setSelectedPoint(updated);
+                    setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
+                    showToast('Referência ABNT gerada!', 'info');
+                  }}
+                  className="text-[9px] font-bold text-[#F4B205] hover:underline"
+                >
+                  Gerar ABNT
+                </button>
+              </div>
+              <textarea
+                value={selectedPoint.referenciaABNT || ''}
+                onChange={e => {
+                  const updated = { ...selectedPoint, referenciaABNT: e.target.value };
+                  setSelectedPoint(updated);
+                  setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
+                }}
+                rows={3}
+                placeholder="Ex: AUTOR. Título: subtítulo. Local: Editora, ano. Coordenadas..."
+                className="w-full bg-white/10 rounded-xl p-2.5 text-xs font-mono border border-white/10 outline-none focus:border-[#F4B205] resize-none custom-scrollbar leading-relaxed"
               />
             </div>
 
@@ -2946,6 +3078,20 @@ export default function HoloMapPlatform() {
                     </button>
                   </div>
 
+                  {selectedPoint.imagemUrl && (
+                    <div className="pt-2 border-t border-white/10 space-y-1.5">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-amber-400 block">
+                        Registro Fotográfico do Ponto
+                      </span>
+                      <div className="w-full h-44 rounded-xl overflow-hidden border border-white/15 bg-black/40 relative">
+                        <img src={selectedPoint.imagemUrl} alt={selectedPoint.titulo} className="w-full h-full object-cover" />
+                        <div className="absolute bottom-2 left-2 px-2.5 py-0.5 rounded bg-black/75 text-[9px] font-bold text-amber-300 border border-white/20 backdrop-blur-md">
+                          Documentação Visual do Ponto
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="pt-2 border-t border-white/10">
                     <span className="text-[10px] uppercase font-bold tracking-wider opacity-60 block mb-1">
                       Anotações e Parecer Técnico de Campo
@@ -2954,6 +3100,17 @@ export default function HoloMapPlatform() {
                       {selectedPoint.anotacoes || 'Sem anotações complementares registradas para este ponto.'}
                     </div>
                   </div>
+
+                  {selectedPoint.referenciaABNT && (
+                    <div className="pt-2 border-t border-white/10 space-y-1">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-amber-400 block">
+                        Referência Normativa (ABNT NBR 6023)
+                      </span>
+                      <div className="p-3 rounded-xl bg-black/20 border border-white/10 text-xs font-mono italic text-gray-200 leading-relaxed">
+                        {selectedPoint.referenciaABNT}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : activeTerritory ? (
                 <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
@@ -3559,11 +3716,12 @@ export default function HoloMapPlatform() {
             </div>
 
             <div className="space-y-4 text-xs sm:text-sm opacity-80 leading-relaxed">
-              <p>
-                Plataforma de inteligência cartográfica e demarcação territorial museológica do Núcleo de Gestão e Pesquisa (NUGEP).
+              <p className="font-medium text-white/95">
+                NUGEP Maps = Plataforma de demarcação territorial do Núcleo Multidimensional de Gestão do Patrimônio e de Documentação em Museus (NUGEP).
               </p>
               <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-xs space-y-2">
                 <p><span className="font-bold text-white">Sistema:</span> NUGEP MAPS</p>
+                <p><span className="font-bold text-white">Instituição:</span> Núcleo Multidimensional de Gestão do Patrimônio e de Documentação em Museus (NUGEP)</p>
                 <p><span className="font-bold text-white">Geodésia:</span> Datum SIRGAS 2000 / WGS 84</p>
                 <p><span className="font-bold text-white">Relevo:</span> DEM Topográfico 3D (1.8x)</p>
                 <p><span className="font-bold text-white">Satélite & Relevo:</span> Imagens de Alta Resolução e DEM 3D</p>
@@ -3581,7 +3739,7 @@ export default function HoloMapPlatform() {
         {/* Marca d'Água Oficial NUGEP (embutida de forma controlada sem vazar página) */}
         <div className="print-watermark-bg">
           <div className="print-watermark-text">
-            NUGEP • NÚCLEO DE GESTÃO E PESQUISA{"\n"}
+            NUGEP • NÚCLEO MULTIDIMENSIONAL DE GESTÃO DO PATRIMÔNIO E DE DOCUMENTAÇÃO EM MUSEUS{"\n"}
             {exportTarget === 'point' ? 'MARCADOR GEORREFERENCIADO' : 'DEMARCAÇÃO TERRITORIAL'}
           </div>
         </div>
@@ -3599,8 +3757,8 @@ export default function HoloMapPlatform() {
               </div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-gray-600">
                 {exportTarget === 'point'
-                  ? 'Núcleo de Gestão e Pesquisa • Dossiê de Registro de Ponto Georreferenciado'
-                  : 'Núcleo de Gestão e Pesquisa • Dossiê de Demarcação Territorial Oficial'}
+                  ? 'Núcleo Multidimensional de Gestão do Patrimônio e de Documentação em Museus (NUGEP) • Dossiê de Registro de Ponto'
+                  : 'Núcleo Multidimensional de Gestão do Patrimônio e de Documentação em Museus (NUGEP) • Dossiê de Demarcação Territorial'}
               </p>
             </div>
           </div>
@@ -3634,6 +3792,18 @@ export default function HoloMapPlatform() {
                 <p className="text-xs font-bold text-[#0F3E8C]">{selectedPoint.objeto || 'Registro Georreferenciado'}</p>
               </div>
             </div>
+
+            {/* FOTO DO PONTO NO PDF */}
+            {selectedPoint.imagemUrl && (
+              <div className="p-2 bg-white border border-gray-200 rounded-lg">
+                <span className="text-[8px] font-bold uppercase text-gray-500 block mb-1">
+                  Registro Fotográfico do Ponto (Documentação Visual):
+                </span>
+                <div className="w-full h-60 rounded-md overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center">
+                  <img src={selectedPoint.imagemUrl} alt={selectedPoint.titulo} className="w-full h-full object-cover" />
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div className="p-2 bg-white border border-gray-200 rounded-lg">
@@ -3674,6 +3844,18 @@ export default function HoloMapPlatform() {
                 {selectedPoint.anotacoes || 'Ponto georreferenciado registrado no sistema NUGEP MAPS sem restrições ou observações adicionais.'}
               </div>
             </div>
+
+            {/* REFERÊNCIA ABNT NO PDF */}
+            {selectedPoint.referenciaABNT && (
+              <div className="p-2.5 bg-white border border-gray-200 rounded-lg text-xs">
+                <span className="font-bold text-gray-700 text-[8px] block mb-0.5 uppercase tracking-wider">
+                  Referência Documental e Bibliográfica (Norma ABNT NBR 6023):
+                </span>
+                <p className="text-gray-900 leading-relaxed font-serif italic text-xs">
+                  {selectedPoint.referenciaABNT}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
