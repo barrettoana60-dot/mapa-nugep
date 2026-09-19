@@ -377,6 +377,7 @@ export default function HoloMapPlatform() {
   const [exportTarget, setExportTarget] = useState<'territory' | 'point'>('territory');
   const [territoriesListTab, setTerritoriesListTab] = useState<'territories' | 'points'>('territories');
   const [territoriesListSearch, setTerritoriesListSearch] = useState('');
+  const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
 
   // Seletores com exclusão mútua: abrir território fecha ponto selecionado e vice-versa,
   // impedindo sobreposição e embaralhamento visual de painéis e marcadores.
@@ -2409,6 +2410,12 @@ export default function HoloMapPlatform() {
             const visual = getPoiVisuals(obj);
             const placement = getSmartPlacement(obj, idx, objetos);
             const isSelected = selectedPoint?.id === obj.id;
+            const isHovered = hoveredEntityId === obj.id;
+            // Ao afastar o zoom (visão geral do Brasil ou Estado, zoom < 9.5),
+            // oculta o nome e exibe apenas o símbolo circular temático.
+            // O nome reaparece automaticamente ao aproximar o zoom (zoom >= 9.5)
+            // ou quando o usuário passa o mouse por cima ou clica no ponto.
+            const showLabel = viewState.zoom >= 9.5 || isSelected || isHovered;
 
             return (
               <Marker
@@ -2422,9 +2429,11 @@ export default function HoloMapPlatform() {
                 }}
               >
                 <div 
+                  onMouseEnter={() => setHoveredEntityId(obj.id)}
+                  onMouseLeave={() => setHoveredEntityId(null)}
                   className={`google-poi-marker select-none cursor-pointer flex items-center group transition-transform duration-200 ${
                     placement === 'left' ? 'flex-row-reverse' : placement === 'top' ? 'flex-col-reverse' : placement === 'bottom' ? 'flex-col' : 'flex-row'
-                  } ${isSelected ? 'scale-125 z-40' : 'hover:scale-115 z-20'}`}
+                  } ${isSelected ? 'scale-125 z-40' : isHovered ? 'scale-120 z-40' : 'hover:scale-115 z-20'}`}
                   style={{ gap: '5px' }}
                   title={`${obj.titulo} (${visual.label})`}
                 >
@@ -2440,26 +2449,28 @@ export default function HoloMapPlatform() {
                     )}
                   </div>
 
-                  {/* Nome do Ponto com Halo idêntico ao Google Maps */}
-                  <div className={`flex flex-col pointer-events-none ${
-                    placement === 'left' ? 'items-end text-right' : placement === 'top' || placement === 'bottom' ? 'items-center text-center' : 'items-start text-left'
-                  }`}>
-                    <span 
-                      className={`text-[11px] sm:text-xs font-bold leading-tight tracking-tight whitespace-nowrap ${isDark ? 'gmaps-halo-dark' : 'gmaps-halo-light'}`}
-                      style={{ 
-                        color: isDark ? '#FFFFFF' : visual.textColor
-                      }}
-                    >
-                      {obj.titulo}
-                    </span>
-                    {obj.objeto && (
+                  {/* Nome do Ponto com Halo idêntico ao Google Maps — exibido quando aproximar o zoom, passar o mouse ou selecionar */}
+                  {showLabel && (
+                    <div className={`flex flex-col pointer-events-none animate-in fade-in duration-200 ${
+                      placement === 'left' ? 'items-end text-right' : placement === 'top' || placement === 'bottom' ? 'items-center text-center' : 'items-start text-left'
+                    }`}>
                       <span 
-                        className={`text-[9px] font-semibold leading-tight mt-0.5 whitespace-nowrap opacity-85 ${isDark ? 'gmaps-halo-dark text-gray-200' : 'gmaps-halo-light text-gray-700'}`}
+                        className={`text-[11px] sm:text-xs font-bold leading-tight tracking-tight whitespace-nowrap ${isDark ? 'gmaps-halo-dark' : 'gmaps-halo-light'}`}
+                        style={{ 
+                          color: isDark ? '#FFFFFF' : visual.textColor
+                        }}
                       >
-                        {obj.objeto}
+                        {obj.titulo}
                       </span>
-                    )}
-                  </div>
+                      {obj.objeto && (
+                        <span 
+                          className={`text-[9px] font-semibold leading-tight mt-0.5 whitespace-nowrap opacity-85 ${isDark ? 'gmaps-halo-dark text-gray-200' : 'gmaps-halo-light text-gray-700'}`}
+                        >
+                          {obj.objeto}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </Marker>
             );
@@ -2513,6 +2524,11 @@ export default function HoloMapPlatform() {
             const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
             const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
             const isSelected = activeTerritory?.id === terr.id;
+            const isHovered = hoveredEntityId === terr.id;
+            // Ao afastar o zoom (visão geral do país, zoom < 7.5),
+            // exibe apenas o símbolo do território e o polígono.
+            // O nome e área reaparecem ao aproximar o zoom (zoom >= 7.5), passar o mouse ou selecionar.
+            const showLabel = viewState.zoom >= 7.5 || isSelected || isHovered;
 
             return (
               <Marker 
@@ -2526,8 +2542,10 @@ export default function HoloMapPlatform() {
                 }}
               >
                 <div 
+                  onMouseEnter={() => setHoveredEntityId(terr.id)}
+                  onMouseLeave={() => setHoveredEntityId(null)}
                   className={`google-poi-marker select-none cursor-pointer flex items-center gap-1.5 group transition-transform duration-200 ${
-                    isSelected ? 'scale-125 z-40' : 'hover:scale-115 z-20'
+                    isSelected ? 'scale-125 z-40' : isHovered ? 'scale-120 z-40' : 'hover:scale-115 z-20'
                   }`}
                   title={`Território: ${terr.nome} (${terr.areaHectares} ha)`}
                 >
@@ -2539,23 +2557,25 @@ export default function HoloMapPlatform() {
                     <Hexagon size={13} className="text-white drop-shadow-sm" strokeWidth={2.4} />
                   </div>
 
-                  {/* Nome da Área / Território com Halo idêntico ao Google Maps */}
-                  <div className="flex flex-col pointer-events-none items-start text-left">
-                    <span 
-                      className={`text-[11px] sm:text-xs font-black uppercase tracking-wider leading-tight whitespace-nowrap ${isDark ? 'gmaps-halo-dark' : 'gmaps-halo-light'}`}
-                      style={{ 
-                        color: isDark ? '#FFFFFF' : terr.cor
-                      }}
-                    >
-                      {terr.nome}
-                    </span>
-                    <span 
-                      className={`text-[9px] font-bold leading-tight mt-0.5 whitespace-nowrap opacity-90 ${isDark ? 'gmaps-halo-dark text-amber-300' : 'gmaps-halo-light'}`}
-                      style={{ color: isDark ? '#FCD34D' : terr.cor }}
-                    >
-                      {terr.areaHectares} ha · {terr.pontos.length} vértices
-                    </span>
-                  </div>
+                  {/* Nome da Área / Território com Halo — exibido quando aproximar o zoom, passar o mouse ou selecionar */}
+                  {showLabel && (
+                    <div className="flex flex-col pointer-events-none items-start text-left animate-in fade-in duration-200">
+                      <span 
+                        className={`text-[11px] sm:text-xs font-black uppercase tracking-wider leading-tight whitespace-nowrap ${isDark ? 'gmaps-halo-dark' : 'gmaps-halo-light'}`}
+                        style={{ 
+                          color: isDark ? '#FFFFFF' : terr.cor
+                        }}
+                      >
+                        {terr.nome}
+                      </span>
+                      <span 
+                        className={`text-[9px] font-bold leading-tight mt-0.5 whitespace-nowrap opacity-90 ${isDark ? 'gmaps-halo-dark text-amber-300' : 'gmaps-halo-light'}`}
+                        style={{ color: isDark ? '#FCD34D' : terr.cor }}
+                      >
+                        {terr.areaHectares} ha · {terr.pontos.length} vértices
+                      </span>
+                    </div>
+                  )}
                 </div>
               </Marker>
             );
