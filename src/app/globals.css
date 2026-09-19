@@ -527,6 +527,50 @@ body {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
+/* Marcador POI idêntico ao Google Maps */
+.google-poi-marker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.35));
+  transition: transform 0.15s ease-out, filter 0.15s ease-out;
+  pointer-events: auto !important;
+}
+
+.google-poi-marker:hover {
+  transform: scale(1.12);
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.55));
+  z-index: 50 !important;
+}
+
+.google-poi-marker:active {
+  transform: scale(0.95);
+}
+
+.gmaps-halo-light {
+  text-shadow: 
+    0 0 3px #FFFFFF, 
+    0 0 3px #FFFFFF, 
+    -1px -1px 0 #FFFFFF, 
+     1px -1px 0 #FFFFFF, 
+    -1px  1px 0 #FFFFFF, 
+     1px  1px 0 #FFFFFF,
+     0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.gmaps-halo-dark {
+  text-shadow: 
+    0 0 4px #000000, 
+    0 0 4px #000000, 
+    -1px -1px 0 #000000, 
+     1px -1px 0 #000000, 
+    -1px  1px 0 #000000, 
+     1px  1px 0 #000000,
+     0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
 /* Suporte de Alta Precisão para Impressão de Dossiê Oficial em PDF com Marca d'Água */
 @media print {
   @page {

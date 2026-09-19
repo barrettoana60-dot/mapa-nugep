@@ -11,7 +11,8 @@ import {
   RotateCcw, Hexagon, Globe, Building2, CloudSun,
   CheckCircle2, AlertCircle, FileText, MousePointer, Landmark,
   Printer, ShieldCheck, Undo2, ChevronRight, LocateFixed, Wrench,
-  GraduationCap, Image as ImageIcon, BookOpen, Camera, Link as LinkIcon
+  GraduationCap, Image as ImageIcon, BookOpen, Camera, Link as LinkIcon,
+  Church, Utensils, Trees, ShoppingBag
 } from 'lucide-react';
 import { NUGEP_LOGO } from '../assets/logo';
 
@@ -65,6 +66,107 @@ export type DemarcatedTerritory = {
   perimetroKm: number;
   criadoEm: string;
   visivel: boolean;
+};
+
+// Identificação de Categoria e Estilo Visual idêntico ao Google Maps
+export const getPoiVisuals = (obj: ObjetoCultural) => {
+  const text = `${obj.objeto || ''} ${obj.titulo || ''} ${obj.autor || ''} ${obj.anotacoes || ''}`.toLowerCase();
+  
+  // 1. Religioso / Igreja / Templo / Sagrado (Roxo Google Maps - Igreja Batista)
+  if (text.includes('igrej') || text.includes('capel') || text.includes('templ') || text.includes('religi') || text.includes('sant') || text.includes('padroeir') || text.includes('paróquia') || text.includes('paroquia') || text.includes('convento') || text.includes('culto')) {
+    return {
+      color: '#8B5CF6',
+      textColor: '#8B5CF6',
+      Icon: Church,
+      label: 'Espaço Religioso & Fé'
+    };
+  }
+
+  // 2. Gastronomia / Alimentação / Culinária / Artesanato (Laranja Google Maps - Cabeça de Porco)
+  if (text.includes('restaurante') || text.includes('culinár') || text.includes('culinar') || text.includes('gastronom') || text.includes('comida') || text.includes('bar') || text.includes('artesan') || text.includes('farinha') || text.includes('smoke') || text.includes('café') || text.includes('cafe') || text.includes('alimento') || text.includes('mineiro') || text.includes('fazenda')) {
+    return {
+      color: '#EA580C',
+      textColor: '#EA580C',
+      Icon: Utensils,
+      label: 'Gastronomia & Saber'
+    };
+  }
+
+  // 3. Natureza / Quilombo / Comunidade / Sítio / Ambiental (Verde Google Maps - Sítio do Manolo)
+  if (text.includes('quilomb') || text.includes('naturez') || text.includes('ambient') || text.includes('parque') || text.includes('reserva') || text.includes('sítio') || text.includes('sitio') || text.includes('fazend') || text.includes('rural') || text.includes('florest') || text.includes('bosque') || text.includes('comunidade') || text.includes('aldeia') || text.includes('indígena') || text.includes('indigena')) {
+    return {
+      color: '#16A34A',
+      textColor: '#16A34A',
+      Icon: Trees,
+      label: 'Território & Natureza'
+    };
+  }
+
+  // 4. Comércio / Feira / Shopping / Mercado (Azul Claro Google Maps - Assaí Atacadista)
+  if (text.includes('shopping') || text.includes('mercad') || text.includes('comérci') || text.includes('comerci') || text.includes('feir') || text.includes('loja') || text.includes('atacad') || text.includes('venda')) {
+    return {
+      color: '#0284C7',
+      textColor: '#0284C7',
+      Icon: ShoppingBag,
+      label: 'Comércio Tradicional'
+    };
+  }
+
+  // 5. Educação / Escola / Universidade / Pesquisa (Azul Claro Google Maps - UNIRIO)
+  if (text.includes('escol') || text.includes('universidad') || text.includes('coleg') || text.includes('educa') || text.includes('unirio') || text.includes('faculdade') || text.includes('campus')) {
+    return {
+      color: '#0284C7',
+      textColor: '#0284C7',
+      Icon: GraduationCap,
+      label: 'Educação & Ciência'
+    };
+  }
+
+  // 6. Público / Institucional / DETRAN / Sede (Cinza Google Maps - DETRAN Posto Mendanha)
+  if (text.includes('detran') || text.includes('posto') || text.includes('públic') || text.includes('public') || text.includes('prefeit') || text.includes('sed') || text.includes('fórum') || text.includes('forum') || text.includes('secretaria') || text.includes('oficial')) {
+    return {
+      color: '#64748B',
+      textColor: '#475569',
+      Icon: Building2,
+      label: 'Órgão Público'
+    };
+  }
+
+  // 7. Patrimônio Histórico / Museu / Tombamento / Cultural (Azul Oficial NUGEP)
+  if (text.includes('museu') || text.includes('patrim') || text.includes('histór') || text.includes('histor') || text.includes('monument') || text.includes('tombad') || text.includes('memorial') || text.includes('centro cultural') || text.includes('acervo')) {
+    return {
+      color: '#0F3E8C',
+      textColor: '#0F3E8C',
+      Icon: Landmark,
+      label: 'Patrimônio Cultural'
+    };
+  }
+
+  // Default: Ponto Cartográfico NUGEP
+  return {
+    color: '#0F3E8C',
+    textColor: '#0F3E8C',
+    Icon: MapPin,
+    label: 'Ponto Cartográfico'
+  };
+};
+
+// Algoritmo anti-colisão de labels idêntico ao Google Maps:
+// Se houver pontos vizinhos muito próximos, alterna a direção do label
+// (direita, esquerda, cima, baixo) para que NUNCA fiquem um em cima do outro.
+export const getSmartPlacement = (target: ObjetoCultural, idx: number, list: ObjetoCultural[]): 'right' | 'left' | 'top' | 'bottom' => {
+  const nearby = list.filter((o, i) => {
+    if (i === idx) return false;
+    const dLat = Math.abs(o.latitude - target.latitude);
+    const dLng = Math.abs(o.longitude - target.longitude);
+    return dLat < 0.012 && dLng < 0.02;
+  });
+
+  if (nearby.length === 0) return 'right';
+
+  const myOrder = nearby.filter(n => n.longitude < target.longitude || (n.longitude === target.longitude && n.latitude < target.latitude)).length;
+  const directions: ('right' | 'left' | 'top' | 'bottom')[] = ['right', 'left', 'top', 'bottom'];
+  return directions[myOrder % 4];
 };
 
 // Tipagem de Planilha
@@ -843,13 +945,6 @@ export default function HoloMapPlatform() {
     }
 
     const mapFeature = e.features?.[0];
-    if (activeTool === 'navigate' && mapFeature?.layer?.id === 'unclustered-points') {
-      const point = objetos.find(obj => obj.id === mapFeature.properties?.id);
-      if (point) {
-        openPoint(point);
-        return;
-      }
-    }
     if (activeTool === 'navigate' && mapFeature?.layer?.id === 'territories-fill') {
       const terrId = mapFeature.properties?.id;
       const terr = demarcatedTerritories.find(t => t.id === terrId);
@@ -857,18 +952,6 @@ export default function HoloMapPlatform() {
         openTerritory(terr);
         return;
       }
-    }
-    if (activeTool === 'navigate' && (mapFeature?.layer?.id === 'territory-centers' || mapFeature?.layer?.id === 'territory-name-labels')) {
-      const terrId = mapFeature.properties?.id;
-      const terr = demarcatedTerritories.find(t => t.id === terrId);
-      if (terr) {
-        openTerritory(terr);
-        return;
-      }
-    }
-    if (activeTool === 'navigate' && mapFeature?.layer?.id === 'point-clusters') {
-      setViewState(prev => ({ ...prev, longitude: e.lngLat.lng, latitude: e.lngLat.lat, zoom: Math.min(prev.zoom + 2, 18) }));
-      return;
     }
 
     const lat = e.lngLat.lat;
@@ -1357,42 +1440,6 @@ export default function HoloMapPlatform() {
     };
   }, [demarcatedTerritories]);
 
-  // Pontos em GeoJSON para que o Mapbox agrupe milhares de registros sem
-  // criar um elemento React/HTML para cada marcador importado.
-  const pointsGeoJSON = useMemo(() => ({
-    type: 'FeatureCollection' as const,
-    features: objetos
-      .filter(obj => Number.isFinite(obj.latitude) && Number.isFinite(obj.longitude))
-      .map(obj => ({
-        type: 'Feature' as const,
-        properties: { id: obj.id, title: obj.titulo, category: obj.objeto || 'Ponto' },
-        geometry: { type: 'Point' as const, coordinates: [obj.longitude, obj.latitude] }
-      }))
-  }), [objetos]);
-
-  // Centros dos territórios como GeoJSON Points — usado em symbol layers
-  // para que o motor de colisão do Mapbox gerencie labels igual ao Google Maps
-  const territoryCentersGeoJSON = useMemo(() => ({
-    type: 'FeatureCollection' as const,
-    features: demarcatedTerritories
-      .filter(t => t.visivel && t.pontos.length >= 3)
-      .map(t => {
-        const lats = t.pontos.map(p => p[1]);
-        const lngs = t.pontos.map(p => p[0]);
-        const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
-        const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
-        return {
-          type: 'Feature' as const,
-          properties: {
-            id: t.id,
-            nome: t.nome,
-            cor: t.cor,
-            areaHectares: t.areaHectares
-          },
-          geometry: { type: 'Point' as const, coordinates: [centerLng, centerLat] }
-        };
-      })
-  }), [demarcatedTerritories]);
 
   const focusPoint = (point: ObjetoCultural) => {
     openPoint(point);
@@ -1663,7 +1710,7 @@ export default function HoloMapPlatform() {
                               <p className="text-[10px] opacity-60 truncate">{terr.areaHectares} ha • {terr.pontos.length} vértices</p>
                             </div>
                           </div>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-white/10 text-gray-300 shrink-0">Ver no 3D</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-white/10 text-gray-300 shrink-0">Localizar</span>
                         </div>
                       ))}
                     </div>
@@ -2191,10 +2238,7 @@ export default function HoloMapPlatform() {
           {...viewState}
           onMove={evt => setViewState(evt.viewState)}
           onClick={handleMapClick}
-          interactiveLayerIds={[
-            ...(activeLayers.includes('markers') ? ['point-clusters', 'unclustered-points'] : []),
-            ...(activeLayers.includes('territories') ? ['territories-fill', 'territory-centers', 'territory-name-labels'] : [])
-          ]}
+          interactiveLayerIds={activeLayers.includes('territories') ? ['territories-fill'] : []}
           onDblClick={(e) => {
             if (activeTool === 'polygon' && polygonDraft.length >= 3) {
               e.preventDefault();
@@ -2355,65 +2399,71 @@ export default function HoloMapPlatform() {
             </Source>
           )}
 
-          {/* Pontos georreferenciados: agrupados para manter o mapa rápido em importações grandes. */}
-          {activeLayers.includes('markers') && (
-            <Source id="points-source" type="geojson" data={pointsGeoJSON as any} cluster clusterMaxZoom={14} clusterRadius={52}>
-              <Layer
-                id="point-clusters"
-                type="circle"
-                filter={['has', 'point_count']}
-                paint={{
-                  'circle-color': isDark ? '#0F3E8C' : '#1E4DB7',
-                  'circle-radius': ['step', ['get', 'point_count'], 18, 20, 22, 100, 28],
-                  'circle-opacity': 0.92,
-                  'circle-stroke-width': 2,
-                  'circle-stroke-color': '#F4B205'
+          {/* ===============================================================
+              PONTOS NO MAPA — PADRÃO IDÊNTICO AO GOOGLE MAPS
+              Pin circular com ícone temático + título com halo branco forte.
+              Visível de longe, sem agrupamento anônimo, com posicionamento
+              inteligente anti-colisão (direita, esquerda, cima, baixo).
+              =============================================================== */}
+          {activeLayers.includes('markers') && objetos.map((obj, idx) => {
+            const visual = getPoiVisuals(obj);
+            const placement = getSmartPlacement(obj, idx, objetos);
+            const isSelected = selectedPoint?.id === obj.id;
+
+            return (
+              <Marker
+                key={`gmaps_poi_${obj.id}`}
+                longitude={obj.longitude}
+                latitude={obj.latitude}
+                anchor="center"
+                onClick={(e) => {
+                  e.originalEvent.stopPropagation();
+                  openPoint(obj);
                 }}
-              />
-              <Layer
-                id="point-cluster-count"
-                type="symbol"
-                filter={['has', 'point_count']}
-                layout={{ 'text-field': ['get', 'point_count_abbreviated'], 'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'], 'text-size': 12 }}
-                paint={{ 'text-color': '#FFFFFF' }}
-              />
-              <Layer
-                id="unclustered-points"
-                type="circle"
-                filter={['!', ['has', 'point_count']]}
-                paint={{
-                  'circle-color': selectedPoint ? ['case', ['==', ['get', 'id'], selectedPoint.id], '#F4B205', '#0F3E8C'] : '#0F3E8C',
-                  'circle-radius': selectedPoint ? ['case', ['==', ['get', 'id'], selectedPoint.id], 9, 6] : 6,
-                  'circle-stroke-width': 2,
-                  'circle-stroke-color': '#FFFFFF',
-                  'circle-opacity': 0.96
-                }}
-              />
-              <Layer
-                id="point-labels"
-                type="symbol"
-                minzoom={9}
-                filter={['!', ['has', 'point_count']]}
-                layout={{
-                  'text-field': ['get', 'title'],
-                  'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
-                  'text-size': ['interpolate', ['linear'], ['zoom'], 9, 9, 14, 12],
-                  'text-offset': [0, 1.2],
-                  'text-anchor': 'top',
-                  'text-max-width': 10,
-                  'text-allow-overlap': false,
-                  'text-ignore-placement': false,
-                  'text-optional': true,
-                  'text-padding': 6
-                }}
-                paint={{
-                  'text-color': isDark ? '#FFFFFF' : '#0F172A',
-                  'text-halo-color': isDark ? '#050608' : '#FFFFFF',
-                  'text-halo-width': 1.5
-                }}
-              />
-            </Source>
-          )}
+              >
+                <div 
+                  className={`google-poi-marker select-none cursor-pointer flex items-center group transition-transform duration-200 ${
+                    placement === 'left' ? 'flex-row-reverse' : placement === 'top' ? 'flex-col-reverse' : placement === 'bottom' ? 'flex-col' : 'flex-row'
+                  } ${isSelected ? 'scale-125 z-40' : 'hover:scale-115 z-20'}`}
+                  style={{ gap: '5px' }}
+                  title={`${obj.titulo} (${visual.label})`}
+                >
+                  {/* Pin Circular Google Maps com ícone temático branco */}
+                  <div 
+                    className="w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center border-2 border-white shadow-[0_2px_7px_rgba(0,0,0,0.45)] shrink-0 transition-transform group-hover:scale-110"
+                    style={{ backgroundColor: isSelected ? '#F4B205' : visual.color }}
+                  >
+                    {isSelected ? (
+                      <MapPin size={13} className="text-[#0F3E8C]" strokeWidth={2.5} />
+                    ) : (
+                      <visual.Icon size={13} className="text-white drop-shadow-sm" strokeWidth={2.2} />
+                    )}
+                  </div>
+
+                  {/* Nome do Ponto com Halo idêntico ao Google Maps */}
+                  <div className={`flex flex-col pointer-events-none ${
+                    placement === 'left' ? 'items-end text-right' : placement === 'top' || placement === 'bottom' ? 'items-center text-center' : 'items-start text-left'
+                  }`}>
+                    <span 
+                      className={`text-[11px] sm:text-xs font-bold leading-tight tracking-tight whitespace-nowrap ${isDark ? 'gmaps-halo-dark' : 'gmaps-halo-light'}`}
+                      style={{ 
+                        color: isDark ? '#FFFFFF' : visual.textColor
+                      }}
+                    >
+                      {obj.titulo}
+                    </span>
+                    {obj.objeto && (
+                      <span 
+                        className={`text-[9px] font-semibold leading-tight mt-0.5 whitespace-nowrap opacity-85 ${isDark ? 'gmaps-halo-dark text-gray-200' : 'gmaps-halo-light text-gray-700'}`}
+                      >
+                        {obj.objeto}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </Marker>
+            );
+          })}
 
           {searchedLocation && (
             <Marker longitude={searchedLocation.lng} latitude={searchedLocation.lat} anchor="bottom">
@@ -2441,7 +2491,7 @@ export default function HoloMapPlatform() {
                   </button>
                 </div>
 
-                {/* Marcador no ponto exato (estático, sem piscar ou pulsar) */}
+                {/* Marcador no ponto exato */}
                 <div className="relative flex flex-col items-center">
                   <div className="w-8 h-8 rounded-full bg-[#0F3E8C] text-[#F4B205] border-2 border-[#F4B205] shadow-lg flex items-center justify-center">
                     <MapPin size={16} strokeWidth={2.5} />
@@ -2452,54 +2502,64 @@ export default function HoloMapPlatform() {
             </Marker>
           )}
 
-          {/* ---------------------------------------------------------------
-              LABELS DOS TERRITÓRIOS via Mapbox symbol layers
-              — motor de colisão nativo: nomes visíveis de longe, sem
-                sobreposição, igual ao Google Maps
-              --------------------------------------------------------------- */}
-          {activeLayers.includes('territories') && demarcatedTerritories.some(t => t.visivel && t.pontos.length >= 3) && (
-            <Source
-              id="territory-centers-src"
-              type="geojson"
-              data={territoryCentersGeoJSON as any}
-            >
-              {/* Círculo colorido no centro — visível de qualquer zoom */}
-              <Layer
-                id="territory-centers"
-                type="circle"
-                paint={{
-                  'circle-color': ['get', 'cor'],
-                  'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 6, 10, 9, 14, 12],
-                  'circle-stroke-width': 2.5,
-                  'circle-stroke-color': '#FFFFFF',
-                  'circle-opacity': 1,
-                  'circle-stroke-opacity': 1
+          {/* ===============================================================
+              TERRITÓRIOS NO MAPA — PADRÃO IDÊNTICO AO GOOGLE MAPS
+              Polígono com preenchimento sutil + Pin e nome da área com halo.
+              Visível de longe, identificável imediatamente sem sobreposição.
+              =============================================================== */}
+          {activeLayers.includes('territories') && demarcatedTerritories.filter(t => t.visivel && t.pontos.length >= 3).map((terr) => {
+            const lats = terr.pontos.map(p => p[1]);
+            const lngs = terr.pontos.map(p => p[0]);
+            const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+            const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+            const isSelected = activeTerritory?.id === terr.id;
+
+            return (
+              <Marker 
+                key={`poi_terr_${terr.id}`} 
+                longitude={centerLng} 
+                latitude={centerLat}
+                anchor="center"
+                onClick={(e) => {
+                  e.originalEvent.stopPropagation();
+                  openTerritory(terr);
                 }}
-              />
-              {/* Nome do território — sempre visível com halo forte */}
-              <Layer
-                id="territory-name-labels"
-                type="symbol"
-                layout={{
-                  'text-field': ['concat', ['get', 'nome'], '\n', ['to-string', ['get', 'areaHectares']], ' ha'],
-                  'text-font': ['DIN Offc Pro Bold', 'Arial Unicode MS Bold'],
-                  'text-size': ['interpolate', ['linear'], ['zoom'], 6, 10, 10, 12, 14, 14],
-                  'text-offset': [0, 1.6],
-                  'text-anchor': 'top',
-                  'text-max-width': 12,
-                  'text-allow-overlap': false,
-                  'text-ignore-placement': false,
-                  'text-optional': true,
-                  'text-padding': 10
-                }}
-                paint={{
-                  'text-color': ['get', 'cor'],
-                  'text-halo-color': isDark ? '#050608' : '#FFFFFF',
-                  'text-halo-width': 2
-                }}
-              />
-            </Source>
-          )}
+              >
+                <div 
+                  className={`google-poi-marker select-none cursor-pointer flex items-center gap-1.5 group transition-transform duration-200 ${
+                    isSelected ? 'scale-125 z-40' : 'hover:scale-115 z-20'
+                  }`}
+                  title={`Território: ${terr.nome} (${terr.areaHectares} ha)`}
+                >
+                  {/* Pin Circular da Área com ícone de demarcação */}
+                  <div 
+                    className="w-7 h-7 rounded-full flex items-center justify-center border-2 border-white shadow-[0_2px_8px_rgba(0,0,0,0.5)] shrink-0 transition-transform group-hover:scale-110"
+                    style={{ backgroundColor: terr.cor }}
+                  >
+                    <Hexagon size={13} className="text-white drop-shadow-sm" strokeWidth={2.4} />
+                  </div>
+
+                  {/* Nome da Área / Território com Halo idêntico ao Google Maps */}
+                  <div className="flex flex-col pointer-events-none items-start text-left">
+                    <span 
+                      className={`text-[11px] sm:text-xs font-black uppercase tracking-wider leading-tight whitespace-nowrap ${isDark ? 'gmaps-halo-dark' : 'gmaps-halo-light'}`}
+                      style={{ 
+                        color: isDark ? '#FFFFFF' : terr.cor
+                      }}
+                    >
+                      {terr.nome}
+                    </span>
+                    <span 
+                      className={`text-[9px] font-bold leading-tight mt-0.5 whitespace-nowrap opacity-90 ${isDark ? 'gmaps-halo-dark text-amber-300' : 'gmaps-halo-light'}`}
+                      style={{ color: isDark ? '#FCD34D' : terr.cor }}
+                    >
+                      {terr.areaHectares} ha · {terr.pontos.length} vértices
+                    </span>
+                  </div>
+                </div>
+              </Marker>
+            );
+          })}
         </Map>
 
       </div>
