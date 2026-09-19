@@ -858,6 +858,14 @@ export default function HoloMapPlatform() {
         return;
       }
     }
+    if (activeTool === 'navigate' && (mapFeature?.layer?.id === 'territory-centers' || mapFeature?.layer?.id === 'territory-name-labels')) {
+      const terrId = mapFeature.properties?.id;
+      const terr = demarcatedTerritories.find(t => t.id === terrId);
+      if (terr) {
+        openTerritory(terr);
+        return;
+      }
+    }
     if (activeTool === 'navigate' && mapFeature?.layer?.id === 'point-clusters') {
       setViewState(prev => ({ ...prev, longitude: e.lngLat.lng, latitude: e.lngLat.lat, zoom: Math.min(prev.zoom + 2, 18) }));
       return;
@@ -1361,6 +1369,30 @@ export default function HoloMapPlatform() {
         geometry: { type: 'Point' as const, coordinates: [obj.longitude, obj.latitude] }
       }))
   }), [objetos]);
+
+  // Centros dos territórios como GeoJSON Points — usado em symbol layers
+  // para que o motor de colisão do Mapbox gerencie labels igual ao Google Maps
+  const territoryCentersGeoJSON = useMemo(() => ({
+    type: 'FeatureCollection' as const,
+    features: demarcatedTerritories
+      .filter(t => t.visivel && t.pontos.length >= 3)
+      .map(t => {
+        const lats = t.pontos.map(p => p[1]);
+        const lngs = t.pontos.map(p => p[0]);
+        const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+        const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+        return {
+          type: 'Feature' as const,
+          properties: {
+            id: t.id,
+            nome: t.nome,
+            cor: t.cor,
+            areaHectares: t.areaHectares
+          },
+          geometry: { type: 'Point' as const, coordinates: [centerLng, centerLat] }
+        };
+      })
+  }), [demarcatedTerritories]);
 
   const focusPoint = (point: ObjetoCultural) => {
     openPoint(point);
@@ -2161,7 +2193,7 @@ export default function HoloMapPlatform() {
           onClick={handleMapClick}
           interactiveLayerIds={[
             ...(activeLayers.includes('markers') ? ['point-clusters', 'unclustered-points'] : []),
-            ...(activeLayers.includes('territories') ? ['territories-fill'] : [])
+            ...(activeLayers.includes('territories') ? ['territories-fill', 'territory-centers', 'territory-name-labels'] : [])
           ]}
           onDblClick={(e) => {
             if (activeTool === 'polygon' && polygonDraft.length >= 3) {
@@ -2360,21 +2392,25 @@ export default function HoloMapPlatform() {
               <Layer
                 id="point-labels"
                 type="symbol"
-                minzoom={14}
+                minzoom={9}
                 filter={['!', ['has', 'point_count']]}
                 layout={{
                   'text-field': ['get', 'title'],
                   'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
-                  'text-size': 11,
-                  'text-offset': [0, 1.4],
+                  'text-size': ['interpolate', ['linear'], ['zoom'], 9, 9, 14, 12],
+                  'text-offset': [0, 1.2],
                   'text-anchor': 'top',
-                  'text-max-width': 12,
+                  'text-max-width': 10,
                   'text-allow-overlap': false,
                   'text-ignore-placement': false,
                   'text-optional': true,
-                  'text-padding': 8
+                  'text-padding': 6
                 }}
-                paint={{ 'text-color': isDark ? '#FFFFFF' : '#0F172A', 'text-halo-color': isDark ? '#050608' : '#FFFFFF', 'text-halo-width': 1.5 }}
+                paint={{
+                  'text-color': isDark ? '#FFFFFF' : '#0F172A',
+                  'text-halo-color': isDark ? '#050608' : '#FFFFFF',
+                  'text-halo-width': 1.5
+                }}
               />
             </Source>
           )}
@@ -2416,49 +2452,54 @@ export default function HoloMapPlatform() {
             </Marker>
           )}
 
-          {/* Labels Compactos nos Territórios — estilo POI Google Maps */}
-          {activeLayers.includes('territories') && demarcatedTerritories.filter(t => t.visivel && t.pontos.length >= 3).map(terr => {
-            const lats = terr.pontos.map(p => p[1]);
-            const lngs = terr.pontos.map(p => p[0]);
-            const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
-            const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
-            return (
-              <Marker 
-                key={`badge_${terr.id}`} 
-                longitude={centerLng} 
-                latitude={centerLat}
-                anchor="center"
-                onClick={(e) => {
-                  e.originalEvent.stopPropagation();
-                  openTerritory(terr);
+          {/* ---------------------------------------------------------------
+              LABELS DOS TERRITÓRIOS via Mapbox symbol layers
+              — motor de colisão nativo: nomes visíveis de longe, sem
+                sobreposição, igual ao Google Maps
+              --------------------------------------------------------------- */}
+          {activeLayers.includes('territories') && demarcatedTerritories.some(t => t.visivel && t.pontos.length >= 3) && (
+            <Source
+              id="territory-centers-src"
+              type="geojson"
+              data={territoryCentersGeoJSON as any}
+            >
+              {/* Círculo colorido no centro — visível de qualquer zoom */}
+              <Layer
+                id="territory-centers"
+                type="circle"
+                paint={{
+                  'circle-color': ['get', 'cor'],
+                  'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 6, 10, 9, 14, 12],
+                  'circle-stroke-width': 2.5,
+                  'circle-stroke-color': '#FFFFFF',
+                  'circle-opacity': 1,
+                  'circle-stroke-opacity': 1
                 }}
-              >
-                <div className="poi-pin-container select-none">
-                  {/* Ponto central colorido */}
-                  <div
-                    className="flex flex-col items-center"
-                  >
-                    <div
-                      className="w-3.5 h-3.5 rounded-full border-2 border-white shadow-md"
-                      style={{ backgroundColor: terr.cor }}
-                    />
-                    {/* Label compacto — max 140 px, truncado */}
-                    <div
-                      className="poi-label-pill mt-1"
-                    >
-                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: terr.cor }} />
-                      <span
-                        className="text-[10px] font-semibold text-white truncate"
-                        style={{ maxWidth: '120px' }}
-                      >
-                        {terr.nome}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </Marker>
-            );
-          })}
+              />
+              {/* Nome do território — sempre visível com halo forte */}
+              <Layer
+                id="territory-name-labels"
+                type="symbol"
+                layout={{
+                  'text-field': ['concat', ['get', 'nome'], '\n', ['to-string', ['get', 'areaHectares']], ' ha'],
+                  'text-font': ['DIN Offc Pro Bold', 'Arial Unicode MS Bold'],
+                  'text-size': ['interpolate', ['linear'], ['zoom'], 6, 10, 10, 12, 14, 14],
+                  'text-offset': [0, 1.6],
+                  'text-anchor': 'top',
+                  'text-max-width': 12,
+                  'text-allow-overlap': false,
+                  'text-ignore-placement': false,
+                  'text-optional': true,
+                  'text-padding': 10
+                }}
+                paint={{
+                  'text-color': ['get', 'cor'],
+                  'text-halo-color': isDark ? '#050608' : '#FFFFFF',
+                  'text-halo-width': 2
+                }}
+              />
+            </Source>
+          )}
         </Map>
 
       </div>
