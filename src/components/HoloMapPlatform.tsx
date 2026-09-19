@@ -274,6 +274,24 @@ export default function HoloMapPlatform() {
   const [activeTerritory, setActiveTerritory] = useState<DemarcatedTerritory | null>(null);
   const [exportTarget, setExportTarget] = useState<'territory' | 'point'>('territory');
   const [territoriesListTab, setTerritoriesListTab] = useState<'territories' | 'points'>('territories');
+  const [territoriesListSearch, setTerritoriesListSearch] = useState('');
+
+  // Seletores com exclusão mútua: abrir território fecha ponto selecionado e vice-versa,
+  // impedindo sobreposição e embaralhamento visual de painéis e marcadores.
+  const openTerritory = (terr: DemarcatedTerritory) => {
+    setActiveTerritory(terr);
+    setSelectedPoint(null);
+  };
+
+  const openPoint = (point: ObjetoCultural) => {
+    setSelectedPoint(point);
+    setActiveTerritory(null);
+  };
+
+  const closeSelection = () => {
+    setActiveTerritory(null);
+    setSelectedPoint(null);
+  };
 
   // Modos de ferramentas
   const [activeTool, setActiveTool] = useState<'navigate' | 'point' | 'measure' | 'polygon'>('navigate');
@@ -780,10 +798,11 @@ export default function HoloMapPlatform() {
     setShowSearchDropdown(false);
     setIsSearchFocused(false);
     if (item.isTerritory && item.territoryData) {
-      setActiveTerritory(item.territoryData);
-    }
-    if (item.isPoint && item.pointData) {
-      setSelectedPoint(item.pointData);
+      openTerritory(item.territoryData);
+      setSearchedLocation(null);
+    } else if (item.isPoint && item.pointData) {
+      openPoint(item.pointData);
+      setSearchedLocation(null);
     }
     if (item.center && Array.isArray(item.center)) {
       const [lng, lat] = item.center;
@@ -827,7 +846,15 @@ export default function HoloMapPlatform() {
     if (activeTool === 'navigate' && mapFeature?.layer?.id === 'unclustered-points') {
       const point = objetos.find(obj => obj.id === mapFeature.properties?.id);
       if (point) {
-        setSelectedPoint(point);
+        openPoint(point);
+        return;
+      }
+    }
+    if (activeTool === 'navigate' && mapFeature?.layer?.id === 'territories-fill') {
+      const terrId = mapFeature.properties?.id;
+      const terr = demarcatedTerritories.find(t => t.id === terrId);
+      if (terr) {
+        openTerritory(terr);
         return;
       }
     }
@@ -838,6 +865,12 @@ export default function HoloMapPlatform() {
 
     const lat = e.lngLat.lat;
     const lng = e.lngLat.lng;
+
+    // Clique em área vazia no modo navegar: fecha painéis ativos
+    if (activeTool === 'navigate') {
+      closeSelection();
+      return;
+    }
 
     // Medição
     if (activeTool === 'measure') {
@@ -871,7 +904,7 @@ export default function HoloMapPlatform() {
       };
 
       setObjetos(prev => [newObj, ...prev]);
-      setSelectedPoint(newObj);
+      openPoint(newObj);
 
       try {
         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`);
@@ -881,7 +914,7 @@ export default function HoloMapPlatform() {
           const author = data.display_name.split(',').slice(1, 3).join(', ').trim();
           const updated = { ...newObj, titulo: title, autor: author || 'Localidade' };
           setObjetos(prev => prev.map(o => o.id === tempId ? updated : o));
-          setSelectedPoint(updated);
+          openPoint(updated);
         }
       } catch (err) {}
       return;
@@ -915,7 +948,7 @@ export default function HoloMapPlatform() {
     };
 
     setDemarcatedTerritories(prev => [newTerritory, ...prev]);
-    setActiveTerritory(newTerritory);
+    openTerritory(newTerritory);
     setPolygonDraft([]);
     setActiveTool('navigate');
     showToast(`Território demarcado com sucesso: ${newTerritory.areaHectares} ha!`);
@@ -970,7 +1003,7 @@ export default function HoloMapPlatform() {
   const handleExportPointPDF = (pointToExport?: ObjetoCultural) => {
     const target = pointToExport || selectedPoint;
     if (!target) return;
-    setSelectedPoint(target);
+    openPoint(target);
     setExportTarget('point');
 
     if (mapRef.current) {
@@ -986,7 +1019,7 @@ export default function HoloMapPlatform() {
   // Exportar Dossiê do Território em PDF com Marca d'Água do NUGEP
   const handleExportTerritoryPDF = (territoryToExport?: DemarcatedTerritory) => {
     const target = territoryToExport || activeTerritory;
-    if (target) setActiveTerritory(target);
+    if (target) openTerritory(target);
     setExportTarget('territory');
 
     // Capturar snapshot do mapa
@@ -1330,14 +1363,12 @@ export default function HoloMapPlatform() {
   }), [objetos]);
 
   const focusPoint = (point: ObjetoCultural) => {
-    setSelectedPoint(point);
-    setActiveTerritory(null);
+    openPoint(point);
     setViewState(prev => ({ ...prev, longitude: point.longitude, latitude: point.latitude, zoom: 17, pitch: 0, bearing: 0 }));
   };
 
   const focusTerritory = (territory: DemarcatedTerritory) => {
-    setActiveTerritory(territory);
-    setSelectedPoint(null);
+    openTerritory(territory);
     fitMapToCoordinates(territory.pontos);
   };
 
@@ -2128,7 +2159,10 @@ export default function HoloMapPlatform() {
           {...viewState}
           onMove={evt => setViewState(evt.viewState)}
           onClick={handleMapClick}
-          interactiveLayerIds={activeLayers.includes('markers') ? ['point-clusters', 'unclustered-points'] : []}
+          interactiveLayerIds={[
+            ...(activeLayers.includes('markers') ? ['point-clusters', 'unclustered-points'] : []),
+            ...(activeLayers.includes('territories') ? ['territories-fill'] : [])
+          ]}
           onDblClick={(e) => {
             if (activeTool === 'polygon' && polygonDraft.length >= 3) {
               e.preventDefault();
@@ -2332,11 +2366,15 @@ export default function HoloMapPlatform() {
                   'text-field': ['get', 'title'],
                   'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
                   'text-size': 11,
-                  'text-offset': [0, 1.25],
+                  'text-offset': [0, 1.4],
                   'text-anchor': 'top',
-                  'text-max-width': 14
+                  'text-max-width': 12,
+                  'text-allow-overlap': false,
+                  'text-ignore-placement': false,
+                  'text-optional': true,
+                  'text-padding': 8
                 }}
-                paint={{ 'text-color': isDark ? '#FFFFFF' : '#0F172A', 'text-halo-color': isDark ? '#050608' : '#FFFFFF', 'text-halo-width': 1.2 }}
+                paint={{ 'text-color': isDark ? '#FFFFFF' : '#0F172A', 'text-halo-color': isDark ? '#050608' : '#FFFFFF', 'text-halo-width': 1.5 }}
               />
             </Source>
           )}
@@ -2378,7 +2416,7 @@ export default function HoloMapPlatform() {
             </Marker>
           )}
 
-          {/* Badges Interativas nos Territórios Salvos */}
+          {/* Labels Compactos nos Territórios — estilo POI Google Maps */}
           {activeLayers.includes('territories') && demarcatedTerritories.filter(t => t.visivel && t.pontos.length >= 3).map(terr => {
             const lats = terr.pontos.map(p => p[1]);
             const lngs = terr.pontos.map(p => p[0]);
@@ -2389,18 +2427,34 @@ export default function HoloMapPlatform() {
                 key={`badge_${terr.id}`} 
                 longitude={centerLng} 
                 latitude={centerLat}
+                anchor="center"
                 onClick={(e) => {
                   e.originalEvent.stopPropagation();
-                  setActiveTerritory(terr);
+                  openTerritory(terr);
                 }}
               >
-                <div 
-                  className="px-3 py-1.5 rounded-full liquid-glass border border-white/30 text-xs font-bold tracking-wide shadow-2xl cursor-pointer hover:scale-110 transition-transform flex items-center gap-1.5"
-                  style={{ borderColor: terr.cor }}
-                >
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: terr.cor }} />
-                  <span>{terr.nome}</span>
-                  <span className="opacity-70 font-mono text-[10px]">({terr.areaHectares} ha)</span>
+                <div className="poi-pin-container select-none">
+                  {/* Ponto central colorido */}
+                  <div
+                    className="flex flex-col items-center"
+                  >
+                    <div
+                      className="w-3.5 h-3.5 rounded-full border-2 border-white shadow-md"
+                      style={{ backgroundColor: terr.cor }}
+                    />
+                    {/* Label compacto — max 140 px, truncado */}
+                    <div
+                      className="poi-label-pill mt-1"
+                    >
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: terr.cor }} />
+                      <span
+                        className="text-[10px] font-semibold text-white truncate"
+                        style={{ maxWidth: '120px' }}
+                      >
+                        {terr.nome}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </Marker>
             );
@@ -2842,6 +2896,27 @@ export default function HoloMapPlatform() {
               </button>
             </div>
 
+            {/* BARRA DE BUSCA INTERNA — estilo Google Maps */}
+            <div className="relative mb-3 shrink-0">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input
+                type="text"
+                value={territoriesListSearch}
+                onChange={e => setTerritoriesListSearch(e.target.value)}
+                placeholder="Pesquisar territórios e pontos..."
+                className="w-full pl-8 pr-3 py-2 text-xs rounded-xl bg-white/8 border border-white/12 outline-none focus:border-[#F4B205]/60 text-white placeholder:text-gray-500 transition-colors"
+              />
+              {territoriesListSearch && (
+                <button
+                  type="button"
+                  onClick={() => setTerritoriesListSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
             {/* ABAS DE NAVEGAÇÃO */}
             <div className="flex gap-2 p-1 bg-white/5 rounded-2xl mb-3 shrink-0">
               <button
@@ -2868,35 +2943,39 @@ export default function HoloMapPlatform() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-2.5">
-              {territoriesListTab === 'territories' ? (
-                demarcatedTerritories.length === 0 ? (
+            <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-2">
+              {territoriesListTab === 'territories' ? (() => {
+                const q = territoriesListSearch.toLowerCase().trim();
+                const filtered = q
+                  ? demarcatedTerritories.filter(t => t.nome.toLowerCase().includes(q) || (t.descricao || '').toLowerCase().includes(q))
+                  : demarcatedTerritories;
+                return filtered.length === 0 ? (
                   <div className="py-12 text-center opacity-60 anim-fade-blur">
                     <Hexagon size={36} className="mx-auto mb-2 opacity-40 text-[#F4B205] anim-float" />
-                    <p className="text-xs">Nenhum território demarcado ainda.</p>
-                    <p className="text-[11px] opacity-75 mt-1">Use a ferramenta de polígono no canto direito para traçar um perímetro ou importe uma planilha.</p>
+                    <p className="text-xs">{q ? `Nenhum território encontrado para "${q}".` : 'Nenhum território demarcado ainda.'}</p>
+                    {!q && <p className="text-[11px] opacity-75 mt-1">Use a ferramenta de polígono no canto direito para traçar um perímetro ou importe uma planilha.</p>}
                   </div>
                 ) : (
-                  demarcatedTerritories.map((terr, idx) => (
+                  <>{filtered.map((terr, idx) => (
                     <div 
                       key={terr.id} 
                       onClick={() => {
-                        setActiveTerritory(terr);
-                        const lats = terr.pontos.map(p => p[1]);
-                        const lngs = terr.pontos.map(p => p[0]);
-                        const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
-                        const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
-                        setViewState(prev => ({ ...prev, latitude: centerLat, longitude: centerLng, zoom: 15 }));
+                        focusTerritory(terr);
                         setActiveModal(null);
                       }}
-                      className={`p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between gap-3 hover:bg-white/10 cursor-pointer transition-all duration-300 group hover-lift hover:border-white/20 anim-stagger-${Math.min(idx + 1, 8)}`}
+                      className={`gmaps-card-item group anim-stagger-${Math.min(idx + 1, 8)}`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-4 h-4 rounded-full shrink-0 transition-transform duration-300 group-hover:scale-125 shadow-sm" style={{ backgroundColor: terr.cor }} />
+                        <div
+                          className="w-9 h-9 rounded-full shrink-0 border-2 border-white/20 flex items-center justify-center shadow-sm"
+                          style={{ backgroundColor: terr.cor + '33', borderColor: terr.cor + '80' }}
+                        >
+                          <div className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: terr.cor }} />
+                        </div>
                         <div className="min-w-0">
-                          <h4 className="font-semibold text-sm group-hover:text-amber-300 transition-colors duration-300 truncate">{terr.nome}</h4>
+                          <h4 className="font-semibold text-sm group-hover:text-amber-300 transition-colors duration-200 truncate">{terr.nome}</h4>
                           <p className="text-[11px] opacity-60 truncate">
-                            {terr.areaHectares} hectares | {terr.areaKm2} km² | {terr.pontos.length} vértices
+                            {terr.areaHectares} ha · {terr.areaKm2} km² · {terr.pontos.length} vértices
                           </p>
                         </div>
                       </div>
@@ -2923,38 +3002,41 @@ export default function HoloMapPlatform() {
                         </button>
                       </div>
                     </div>
-                  ))
-                )
-              ) : (
-                objetos.length === 0 ? (
+                  ))}</>
+                );
+              })() : (() => {
+                const q = territoriesListSearch.toLowerCase().trim();
+                const filtered = q
+                  ? objetos.filter(o => o.titulo.toLowerCase().includes(q) || (o.objeto || '').toLowerCase().includes(q) || (o.autor || '').toLowerCase().includes(q))
+                  : objetos;
+                return filtered.length === 0 ? (
                   <div className="py-12 text-center opacity-60 anim-fade-blur">
                     <MapPin size={36} className="mx-auto mb-2 opacity-40 text-[#F4B205] anim-float" />
-                    <p className="text-xs">Nenhum ponto registrado ainda.</p>
-                    <p className="text-[11px] opacity-75 mt-1">Use a ferramenta de marcador no canto direito ou importe uma planilha para registrar pontos.</p>
+                    <p className="text-xs">{q ? `Nenhum ponto encontrado para "${q}".` : 'Nenhum ponto registrado ainda.'}</p>
+                    {!q && <p className="text-[11px] opacity-75 mt-1">Use a ferramenta de marcador no canto direito ou importe uma planilha para registrar pontos.</p>}
                   </div>
                 ) : (
-                  objetos.map((obj, idx) => (
+                  <>{filtered.map((obj, idx) => (
                     <div 
                       key={obj.id} 
                       onClick={() => {
-                        setSelectedPoint(obj);
-                        setViewState(prev => ({ ...prev, latitude: obj.latitude, longitude: obj.longitude, zoom: 16 }));
+                        focusPoint(obj);
                         setActiveModal(null);
                       }}
-                      className={`p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between gap-3 hover:bg-white/10 cursor-pointer transition-all duration-300 group hover-lift hover:border-white/20 anim-stagger-${Math.min(idx + 1, 8)}`}
+                      className={`gmaps-card-item group anim-stagger-${Math.min(idx + 1, 8)}`}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-[#0F3E8C]/20 border border-[#F4B205]/40 flex items-center justify-center text-[#F4B205] shrink-0 transition-all duration-300 group-hover:bg-[#0F3E8C]/40 group-hover:border-[#F4B205]/70">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-full bg-[#0F3E8C]/25 border border-[#F4B205]/40 flex items-center justify-center text-[#F4B205] shrink-0 transition-all duration-200 group-hover:bg-[#0F3E8C]/50">
                           <MapPin size={15} />
                         </div>
                         <div className="min-w-0">
-                          <h4 className="font-semibold text-sm group-hover:text-amber-300 transition-colors duration-300 truncate">{obj.titulo}</h4>
+                          <h4 className="font-semibold text-sm group-hover:text-amber-300 transition-colors duration-200 truncate">{obj.titulo}</h4>
                           <p className="text-[11px] opacity-60 truncate">
-                            {obj.objeto || 'Ponto'} • {obj.autor || 'Território'} ({obj.latitude.toFixed(4)}, {obj.longitude.toFixed(4)})
+                            {obj.objeto || 'Ponto'} · {obj.autor || 'NUGEP MAPS'} · ({obj.latitude.toFixed(4)}, {obj.longitude.toFixed(4)})
                           </p>
                           {obj.anotacoes && (
                             <p className="text-[10px] text-amber-300/80 line-clamp-1 italic mt-0.5">
-                              "{obj.anotacoes}"
+                              &ldquo;{obj.anotacoes}&rdquo;
                             </p>
                           )}
                         </div>
@@ -2978,9 +3060,9 @@ export default function HoloMapPlatform() {
                         </button>
                       </div>
                     </div>
-                  ))
-                )
-              )}
+                  ))}</>
+                );
+              })()}
             </div>
           </div>
         </div>
