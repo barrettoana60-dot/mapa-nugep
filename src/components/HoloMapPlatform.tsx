@@ -12,7 +12,7 @@ import {
   CheckCircle2, AlertCircle, FileText, MousePointer, Landmark,
   Printer, ShieldCheck, Undo2, ChevronRight, LocateFixed, Wrench,
   GraduationCap, Image as ImageIcon, BookOpen, Camera, Link as LinkIcon,
-  Church, Utensils, Trees, ShoppingBag
+  Church, Utensils, Trees, ShoppingBag, Plus, Star
 } from 'lucide-react';
 import { NUGEP_LOGO } from '../assets/logo';
 
@@ -49,8 +49,33 @@ export type ObjetoCultural = {
   datasetName?: string;
   anotacoes?: string;
   imagemUrl?: string;       // Foto ou registro visual do ponto (Base64 ou URL estilo Google Maps)
+  imagens?: string[];       // Galeria de múltiplas fotos registradas no ponto
   referenciaABNT?: string;  // Citação / Referência bibliográfica ou documental em norma ABNT NBR 6023
   extraProps?: Record<string, any>;
+};
+
+// Retorna a imagem principal (capa) do ponto para usar como ícone no mapa
+export const getPointPrimaryImage = (obj: ObjetoCultural): string | undefined => {
+  if (obj.imagens && obj.imagens.length > 0 && obj.imagens[0]) {
+    return obj.imagens[0];
+  }
+  return obj.imagemUrl || undefined;
+};
+
+// Retorna todas as fotos cadastradas no ponto (sem duplicatas)
+export const getPointAllImages = (obj: ObjetoCultural): string[] => {
+  const list: string[] = [];
+  if (obj.imagemUrl && !list.includes(obj.imagemUrl)) {
+    list.push(obj.imagemUrl);
+  }
+  if (obj.imagens && Array.isArray(obj.imagens)) {
+    obj.imagens.forEach(img => {
+      if (img && typeof img === 'string' && !list.includes(img)) {
+        list.push(img);
+      }
+    });
+  }
+  return list;
 };
 
 // Tipagem dos Territórios Demarcados
@@ -2416,6 +2441,7 @@ export default function HoloMapPlatform() {
             // O nome reaparece automaticamente ao aproximar o zoom (zoom >= 9.5)
             // ou quando o usuário passa o mouse por cima ou clica no ponto.
             const showLabel = viewState.zoom >= 9.5 || isSelected || isHovered;
+            const primaryImg = getPointPrimaryImage(obj);
 
             return (
               <Marker
@@ -2437,12 +2463,18 @@ export default function HoloMapPlatform() {
                   style={{ gap: '5px' }}
                   title={`${obj.titulo} (${visual.label})`}
                 >
-                  {/* Pin Circular Google Maps com ícone temático branco */}
+                  {/* Pin Circular Google Maps: se tiver foto, exibe a imagem real do ponto como avatar; caso contrário, exibe o ícone temático */}
                   <div 
-                    className="w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center border-2 border-white shadow-[0_2px_7px_rgba(0,0,0,0.45)] shrink-0 transition-transform group-hover:scale-110"
+                    className="w-7 h-7 rounded-full flex items-center justify-center border-2 border-white shadow-[0_2px_7px_rgba(0,0,0,0.45)] shrink-0 transition-transform group-hover:scale-110 overflow-hidden"
                     style={{ backgroundColor: isSelected ? '#F4B205' : visual.color }}
                   >
-                    {isSelected ? (
+                    {primaryImg ? (
+                      <img 
+                        src={primaryImg} 
+                        alt={obj.titulo} 
+                        className="w-full h-full object-cover" 
+                      />
+                    ) : isSelected ? (
                       <MapPin size={13} className="text-[#0F3E8C]" strokeWidth={2.5} />
                     ) : (
                       <visual.Icon size={13} className="text-white drop-shadow-sm" strokeWidth={2.2} />
@@ -2834,100 +2866,215 @@ export default function HoloMapPlatform() {
               />
             </div>
 
-            {/* FOTOGRAFIA / IMAGEM DO LOCAL (ESTILO GOOGLE MAPS) */}
-            <div className="space-y-1.5 pt-1">
-              <label className="text-[10px] uppercase font-bold tracking-wider text-amber-400 flex items-center gap-1.5">
-                <Camera size={13} />
-                <span>Foto do Ponto (Estilo Google Maps)</span>
-              </label>
+            {/* FOTOGRAFIAS / GALERIA DO LOCAL (ESTILO GOOGLE MAPS) */}
+            <div className="space-y-2 pt-1">
+              {(() => {
+                const pointImages = getPointAllImages(selectedPoint);
 
-              {selectedPoint.imagemUrl ? (
-                <div className="relative rounded-xl overflow-hidden border border-[#F4B205]/40 bg-black/40 group/img shadow-md">
-                  <img 
-                    src={selectedPoint.imagemUrl} 
-                    alt={selectedPoint.titulo} 
-                    className="w-full h-36 object-cover transition-transform duration-300 group-hover/img:scale-105" 
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent flex items-end justify-between p-2.5">
-                    <span className="text-[10px] font-mono text-amber-300 truncate max-w-[180px]">Foto registrada</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const updated = { ...selectedPoint, imagemUrl: undefined };
+                const handleFilesUpload = (fileList: FileList | null) => {
+                  if (!fileList || !selectedPoint) return;
+                  const files = Array.from(fileList);
+                  if (files.length === 0) return;
+                  const valid = files.filter(f => f.size <= 10 * 1024 * 1024);
+                  if (valid.length < files.length) {
+                    showToast('Algumas fotos tinham mais de 10MB e foram ignoradas.', 'info');
+                  }
+                  if (valid.length === 0) return;
+
+                  let processed = 0;
+                  const newBase64s: string[] = [];
+
+                  valid.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = ev => {
+                      const base64 = ev.target?.result as string;
+                      if (base64 && !pointImages.includes(base64) && !newBase64s.includes(base64)) {
+                        newBase64s.push(base64);
+                      }
+                      processed++;
+                      if (processed === valid.length) {
+                        const combined = [...pointImages, ...newBase64s];
+                        const updated: ObjetoCultural = {
+                          ...selectedPoint,
+                          imagemUrl: combined[0],
+                          imagens: combined
+                        };
                         setSelectedPoint(updated);
                         setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
-                        showToast('Foto removida', 'info');
-                      }}
-                      className="px-2 py-1 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white text-[10px] font-bold flex items-center gap-1 shadow transition"
-                      title="Excluir imagem"
-                    >
-                      <Trash2 size={11} />
-                      <span>Remover</span>
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-3 rounded-xl bg-black/20 border border-dashed border-white/20 hover:border-[#F4B205]/50 transition flex flex-col items-center justify-center gap-2">
-                  <label className="w-full cursor-pointer flex flex-col items-center justify-center gap-1.5 py-1.5">
-                    <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[#F4B205]">
-                      <Upload size={14} />
+                        showToast(`${newBase64s.length} foto(s) adicionada(s)!`, 'success');
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  });
+                };
+
+                const handleAddUrl = (url: string) => {
+                  const trimmed = url.trim();
+                  if (!trimmed || !selectedPoint) return;
+                  if (pointImages.includes(trimmed)) {
+                    showToast('Esta foto já está na galeria.', 'info');
+                    return;
+                  }
+                  const combined = [...pointImages, trimmed];
+                  const updated: ObjetoCultural = {
+                    ...selectedPoint,
+                    imagemUrl: combined[0],
+                    imagens: combined
+                  };
+                  setSelectedPoint(updated);
+                  setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
+                  showToast('Foto adicionada à galeria!', 'success');
+                };
+
+                const handleRemoveImg = (index: number) => {
+                  const updatedList = pointImages.filter((_, i) => i !== index);
+                  const updated: ObjetoCultural = {
+                    ...selectedPoint,
+                    imagemUrl: updatedList[0] || undefined,
+                    imagens: updatedList
+                  };
+                  setSelectedPoint(updated);
+                  setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
+                  showToast('Foto removida.', 'info');
+                };
+
+                const handleSetCover = (index: number) => {
+                  if (index === 0) return;
+                  const target = pointImages[index];
+                  const reordered = [target, ...pointImages.filter((_, i) => i !== index)];
+                  const updated: ObjetoCultural = {
+                    ...selectedPoint,
+                    imagemUrl: reordered[0],
+                    imagens: reordered
+                  };
+                  setSelectedPoint(updated);
+                  setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
+                  showToast('Foto definida como ícone do marcador no mapa!', 'success');
+                };
+
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] uppercase font-bold tracking-wider text-amber-400 flex items-center gap-1.5">
+                        <Camera size={13} />
+                        <span>Fotos do Ponto ({pointImages.length})</span>
+                      </label>
+                      <span className="text-[9px] text-gray-400">A 1ª foto é o ícone do mapa</span>
                     </div>
-                    <span className="text-[11px] font-bold text-white">Carregar foto do dispositivo</span>
-                    <span className="text-[9px] opacity-50">PNG, JPG, WEBP até 10MB</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={e => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        if (file.size > 10 * 1024 * 1024) {
-                          showToast('A imagem deve ter no máximo 10MB.', 'error');
-                          return;
-                        }
-                        const reader = new FileReader();
-                        reader.onload = ev => {
-                          const base64 = ev.target?.result as string;
-                          const updated = { ...selectedPoint, imagemUrl: base64 };
-                          setSelectedPoint(updated);
-                          setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
-                          showToast('Foto do local adicionada!', 'success');
-                        };
-                        reader.readAsDataURL(file);
-                      }}
-                    />
-                  </label>
-                  <div className="w-full flex items-center gap-2 pt-2 border-t border-white/10">
-                    <LinkIcon size={12} className="opacity-40 shrink-0" />
-                    <input
-                      type="url"
-                      placeholder="Ou cole a URL da imagem (https://...)"
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const val = (e.currentTarget.value || '').trim();
-                          if (val) {
-                            const updated = { ...selectedPoint, imagemUrl: val };
-                            setSelectedPoint(updated);
-                            setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
-                            showToast('URL da foto vinculada!', 'success');
-                          }
-                        }
-                      }}
-                      onBlur={e => {
-                        const val = (e.currentTarget.value || '').trim();
-                        if (val && val !== selectedPoint.imagemUrl) {
-                          const updated = { ...selectedPoint, imagemUrl: val };
-                          setSelectedPoint(updated);
-                          setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
-                          showToast('URL da foto vinculada!', 'success');
-                        }
-                      }}
-                      className="w-full bg-white/5 rounded-lg px-2.5 py-1 text-[11px] border border-white/10 outline-none focus:border-[#F4B205] text-white"
-                    />
+
+                    {pointImages.length > 0 && (
+                      <div className="space-y-2">
+                        {/* Foto Principal / Capa */}
+                        <div className="relative rounded-xl overflow-hidden border border-[#F4B205]/40 bg-black/40 group/img shadow-md">
+                          <img 
+                            src={pointImages[0]} 
+                            alt={`${selectedPoint.titulo} - Foto Principal`} 
+                            className="w-full h-40 object-cover transition-transform duration-300 group-hover/img:scale-105" 
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent flex items-end justify-between p-2.5">
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#0F3E8C]/90 border border-[#F4B205]/60 text-[9px] font-bold text-[#F4B205] backdrop-blur-md">
+                              <Star size={10} className="fill-[#F4B205]" />
+                              <span>Ícone no Mapa (Capa)</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveImg(0)}
+                              className="px-2 py-1 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white text-[10px] font-bold flex items-center gap-1 shadow transition"
+                              title="Remover esta foto"
+                            >
+                              <Trash2 size={11} />
+                              <span>Remover</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Grade de Fotos Adicionais (Miniaturas) */}
+                        {pointImages.length > 1 && (
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {pointImages.slice(1).map((img, idx) => {
+                              const realIndex = idx + 1;
+                              return (
+                                <div key={`point_thumb_${realIndex}`} className="relative rounded-lg overflow-hidden border border-white/15 bg-black/30 group/thumb h-20 shadow-sm">
+                                  <img src={img} alt={`Foto ${realIndex + 1}`} className="w-full h-full object-cover" />
+                                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex flex-col justify-between p-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSetCover(realIndex)}
+                                      className="self-start p-1 rounded bg-[#F4B205] text-[#0F3E8C] text-[9px] font-bold flex items-center gap-0.5 shadow hover:scale-105 transition"
+                                      title="Definir como foto do marcador no mapa"
+                                    >
+                                      <Star size={10} className="fill-[#0F3E8C]" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveImg(realIndex)}
+                                      className="self-end p-1 rounded bg-rose-600 text-white hover:bg-rose-700 transition"
+                                      title="Excluir foto"
+                                    >
+                                      <Trash2 size={10} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Botões para Adicionar Mais Fotos (Upload múltiplo ou URL) */}
+                    <div className="p-2.5 rounded-xl bg-black/20 border border-dashed border-white/20 hover:border-[#F4B205]/50 transition space-y-2">
+                      <label className="w-full cursor-pointer flex items-center justify-center gap-2 py-1 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-xs font-bold transition">
+                        <Upload size={14} className="text-[#F4B205]" />
+                        <span>Carregar Fotos (selecione várias)</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          className="hidden"
+                          onChange={e => {
+                            handleFilesUpload(e.target.files);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+
+                      <div className="flex items-center gap-1.5 pt-1 border-t border-white/10">
+                        <LinkIcon size={12} className="opacity-40 shrink-0 text-gray-400" />
+                        <input
+                          type="url"
+                          placeholder="Ou cole a URL da foto (https://...)"
+                          id="input-add-photo-url"
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const val = e.currentTarget.value;
+                              if (val) {
+                                handleAddUrl(val);
+                                e.currentTarget.value = '';
+                              }
+                            }
+                          }}
+                          className="w-full bg-white/5 rounded-lg px-2 py-1 text-[11px] border border-white/10 outline-none focus:border-[#F4B205] text-white placeholder:text-gray-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const input = document.getElementById('input-add-photo-url') as HTMLInputElement | null;
+                            if (input && input.value) {
+                              handleAddUrl(input.value);
+                              input.value = '';
+                            }
+                          }}
+                          className="px-2 py-1 rounded-lg bg-[#0F3E8C] hover:bg-[#1E4DB7] text-[#F4B205] text-[10px] font-bold shrink-0 transition"
+                        >
+                          <Plus size={12} />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* REFERÊNCIA DOCUMENTAL E BIBLIOGRÁFICA (NORMA ABNT NBR 6023) */}
@@ -3281,19 +3428,29 @@ export default function HoloMapPlatform() {
                     </button>
                   </div>
 
-                  {selectedPoint.imagemUrl && (
-                    <div className="pt-2 border-t border-white/10 space-y-1.5">
-                      <span className="text-[10px] uppercase font-bold tracking-wider text-amber-400 block">
-                        Registro Fotográfico do Ponto
-                      </span>
-                      <div className="w-full h-44 rounded-xl overflow-hidden border border-white/15 bg-black/40 relative">
-                        <img src={selectedPoint.imagemUrl} alt={selectedPoint.titulo} className="w-full h-full object-cover" />
-                        <div className="absolute bottom-2 left-2 px-2.5 py-0.5 rounded bg-black/75 text-[9px] font-bold text-amber-300 border border-white/20 backdrop-blur-md">
-                          Documentação Visual do Ponto
+                  {(() => {
+                    const allImgs = getPointAllImages(selectedPoint);
+                    if (allImgs.length === 0) return null;
+                    return (
+                      <div className="pt-2 border-t border-white/10 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-amber-400 block">
+                            Documentação Visual do Ponto ({allImgs.length} {allImgs.length === 1 ? 'registro' : 'registros'})
+                          </span>
+                        </div>
+                        <div className={`grid gap-2 ${allImgs.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                          {allImgs.map((img, i) => (
+                            <div key={`dossier_modal_img_${i}`} className="rounded-xl overflow-hidden border border-white/15 bg-black/40 relative h-36">
+                              <img src={img} alt={`${selectedPoint.titulo} - Foto ${i + 1}`} className="w-full h-full object-cover" />
+                              <div className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded bg-black/75 text-[8px] font-bold text-amber-300 border border-white/20 backdrop-blur-md">
+                                {i === 0 ? 'Foto Principal (Capa)' : `Foto #${i + 1}`}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   <div className="pt-2 border-t border-white/10">
                     <span className="text-[10px] uppercase font-bold tracking-wider opacity-60 block mb-1">
@@ -3996,17 +4153,25 @@ export default function HoloMapPlatform() {
               </div>
             </div>
 
-            {/* FOTO DO PONTO NO PDF */}
-            {selectedPoint.imagemUrl && (
-              <div className="p-2 bg-white border border-gray-200 rounded-lg">
-                <span className="text-[8px] font-bold uppercase text-gray-500 block mb-1">
-                  Registro Fotográfico do Ponto (Documentação Visual):
-                </span>
-                <div className="w-full h-60 rounded-md overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center">
-                  <img src={selectedPoint.imagemUrl} alt={selectedPoint.titulo} className="w-full h-full object-cover" />
+            {/* FOTOS DO PONTO NO PDF (MÚLTIPLAS IMAGENS) */}
+            {(() => {
+              const allImgs = getPointAllImages(selectedPoint);
+              if (allImgs.length === 0) return null;
+              return (
+                <div className="p-2 bg-white border border-gray-200 rounded-lg space-y-1.5">
+                  <span className="text-[8px] font-bold uppercase text-gray-500 block">
+                    Documentação Visual do Ponto ({allImgs.length} {allImgs.length === 1 ? 'foto registrada' : 'fotos registradas'}):
+                  </span>
+                  <div className={`grid gap-2 ${allImgs.length === 1 ? 'grid-cols-1' : allImgs.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                    {allImgs.map((img, i) => (
+                      <div key={`print_pdf_img_${i}`} className="rounded-md overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center h-44">
+                        <img src={img} alt={`${selectedPoint.titulo} - Foto ${i + 1}`} className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div className="p-2 bg-white border border-gray-200 rounded-lg">
