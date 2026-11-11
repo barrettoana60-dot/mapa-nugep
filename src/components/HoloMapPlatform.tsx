@@ -2955,61 +2955,132 @@ export default function HoloMapPlatform() {
               {(() => {
                 const pointImages = getPointAllImages(selectedPoint);
 
-                const handleFilesUpload = (fileList: FileList | null) => {
-                  if (!fileList || !selectedPoint) return;
-                  const files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
-                  if (files.length === 0) {
-                    showToast('Selecione imagens válidas (JPG, PNG, etc.)', 'error');
+                // Comprime e redimensiona a foto para ~800px (~40KB), evitando estourar o limite de memória ou localStorage
+                const compressImageFile = (file: File): Promise<string> => {
+                  return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onerror = () => resolve('');
+                    reader.onload = (e) => {
+                      const dataUrl = e.target?.result as string;
+                      if (!dataUrl) {
+                        resolve('');
+                        return;
+                      }
+
+                      // Se já for pequena (< 150KB), usa direto
+                      if (file.size < 150 * 1024) {
+                        resolve(dataUrl);
+                        return;
+                      }
+
+                      const img = new Image();
+                      const safetyTimer = setTimeout(() => resolve(dataUrl), 2500);
+
+                      img.onload = () => {
+                        clearTimeout(safetyTimer);
+                        try {
+                          const MAX_SIZE = 800;
+                          let w = img.naturalWidth || img.width;
+                          let h = img.naturalHeight || img.height;
+                          if (!w || !h) {
+                            resolve(dataUrl);
+                            return;
+                          }
+
+                          if (w > MAX_SIZE || h > MAX_SIZE) {
+                            if (w > h) {
+                              h = Math.round((h * MAX_SIZE) / w);
+                              w = MAX_SIZE;
+                            } else {
+                              w = Math.round((w * MAX_SIZE) / h);
+                              h = MAX_SIZE;
+                            }
+                          }
+
+                          const canvas = document.createElement('canvas');
+                          canvas.width = w;
+                          canvas.height = h;
+                          const ctx = canvas.getContext('2d');
+                          if (!ctx) {
+                            resolve(dataUrl);
+                            return;
+                          }
+
+                          ctx.drawImage(img, 0, 0, w, h);
+                          const compressed = canvas.toDataURL('image/jpeg', 0.75);
+                          resolve(compressed || dataUrl);
+                        } catch (_) {
+                          resolve(dataUrl);
+                        }
+                      };
+
+                      img.onerror = () => {
+                        clearTimeout(safetyTimer);
+                        resolve(dataUrl);
+                      };
+
+                      img.src = dataUrl;
+                    };
+
+                    reader.readAsDataURL(file);
+                  });
+                };
+
+                const handleFilesUpload = async (rawFiles: FileList | File[] | null) => {
+                  if (!rawFiles || !selectedPoint) return;
+                  const filesArray = Array.from(rawFiles);
+                  const validFiles = filesArray.filter(f => 
+                    (f.type && f.type.startsWith('image/')) || 
+                    /\.(jpe?g|png|webp|gif|bmp|heic|heif|svg)$/i.test(f.name)
+                  );
+
+                  if (validFiles.length === 0) {
+                    showToast('Selecione imagens válidas (JPG, PNG, WebP, etc.).', 'error');
                     return;
                   }
 
                   const pointId = selectedPoint.id;
-                  const MAX_FOTOS = 10;
+                  // 1 Capa no mapa + até 10 fotos extras = 11 fotos no total
+                  const MAX_TOTAL_FOTOS = 11;
+                  const currentImages = getPointAllImages(selectedPoint);
+                  const slotsAvailable = MAX_TOTAL_FOTOS - currentImages.length;
 
-                  // Lê arquivo a arquivo sequencialmente com FileReader simples
-                  const readNext = (index: number, accumulated: string[]) => {
-                    if (index >= files.length) {
-                      // Fim — atualiza estado com tudo que foi lido
-                      if (accumulated.length === 0) {
-                        showToast('Nenhuma foto pôde ser lida.', 'error');
-                        return;
-                      }
-                      setSelectedPoint(prev => {
-                        if (!prev) return prev;
-                        const existing = getPointAllImages(prev);
-                        const slots = MAX_FOTOS - existing.length;
-                        if (slots <= 0) {
-                          showToast(`Limite de ${MAX_FOTOS} fotos atingido.`, 'info');
-                          return prev;
-                        }
-                        const combined = [...existing, ...accumulated.slice(0, slots)];
-                        return { ...prev, imagemUrl: combined[0], imagens: combined };
-                      });
-                      setObjetos(prev => prev.map(o => {
-                        if (o.id !== pointId) return o;
-                        const existing = getPointAllImages(o);
-                        const slots = MAX_FOTOS - existing.length;
-                        if (slots <= 0) return o;
-                        const combined = [...existing, ...accumulated.slice(0, slots)];
-                        return { ...o, imagemUrl: combined[0], imagens: combined };
-                      }));
-                      showToast(`${accumulated.length} foto(s) adicionada(s)!`, 'success');
-                      return;
+                  if (slotsAvailable <= 0) {
+                    showToast('Limite máximo de 10 fotos extras atingido!', 'info');
+                    return;
+                  }
+
+                  const filesToProcess = validFiles.slice(0, slotsAvailable);
+                  showToast(`Processando ${filesToProcess.length} foto(s)...`, 'info');
+
+                  const processed: string[] = [];
+                  for (const file of filesToProcess) {
+                    const base64 = await compressImageFile(file);
+                    if (base64) {
+                      processed.push(base64);
                     }
+                  }
 
-                    const reader = new FileReader();
-                    reader.onload = ev => {
-                      const result = ev.target?.result as string;
-                      if (result) accumulated.push(result);
-                      readNext(index + 1, accumulated);
-                    };
-                    reader.onerror = () => {
-                      readNext(index + 1, accumulated); // pula e continua
-                    };
-                    reader.readAsDataURL(files[index]);
-                  };
+                  if (processed.length === 0) {
+                    showToast('Não foi possível ler as fotos.', 'error');
+                    return;
+                  }
 
-                  readNext(0, []);
+                  setSelectedPoint(prev => {
+                    if (!prev) return prev;
+                    const existing = getPointAllImages(prev);
+                    const combined = [...existing, ...processed].slice(0, MAX_TOTAL_FOTOS);
+                    return { ...prev, imagemUrl: combined[0], imagens: combined };
+                  });
+
+                  setObjetos(prev => prev.map(o => {
+                    if (o.id !== pointId) return o;
+                    const existing = getPointAllImages(o);
+                    const combined = [...existing, ...processed].slice(0, MAX_TOTAL_FOTOS);
+                    return { ...o, imagemUrl: combined[0], imagens: combined };
+                  }));
+
+                  showToast(`${processed.length} foto(s) adicionada(s) com sucesso!`, 'success');
                 };
 
                 const handleAddUrl = (url: string) => {
@@ -3017,6 +3088,10 @@ export default function HoloMapPlatform() {
                   if (!trimmed || !selectedPoint) return;
                   if (pointImages.includes(trimmed)) {
                     showToast('Esta foto já está na galeria.', 'info');
+                    return;
+                  }
+                  if (pointImages.length >= 11) {
+                    showToast('Limite de 10 fotos extras atingido!', 'info');
                     return;
                   }
                   const combined = [...pointImages, trimmed];
@@ -3061,9 +3136,9 @@ export default function HoloMapPlatform() {
                     <div className="flex items-center justify-between">
                       <label className="text-[10px] uppercase font-bold tracking-wider text-amber-400 flex items-center gap-1.5">
                         <Camera size={13} />
-                        <span>Fotos do Ponto ({pointImages.length})</span>
+                        <span>Fotos do Ponto ({pointImages.length}/11)</span>
                       </label>
-                      <span className="text-[9px] text-gray-400">A 1ª foto é o ícone do mapa</span>
+                      <span className="text-[9px] text-gray-400">1 Capa + até 10 Fotos Extras</span>
                     </div>
 
                     {pointImages.length > 0 && (
@@ -3128,17 +3203,20 @@ export default function HoloMapPlatform() {
 
                     {/* Botões para Adicionar Mais Fotos (Upload múltiplo ou URL) */}
                     <div className="p-2.5 rounded-xl bg-black/20 border border-dashed border-white/20 hover:border-[#F4B205]/50 transition space-y-2">
-                      <label className="w-full flex items-center justify-center gap-2 py-1.5 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-white cursor-pointer text-xs font-bold transition">
+                      <label className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 text-white cursor-pointer text-xs font-bold transition">
                         <Upload size={14} className="text-[#F4B205]" />
-                        <span>Carregar Fotos (até {10 - pointImages.length} vagas)</span>
+                        <span>Carregar Fotos ({Math.max(0, 11 - pointImages.length)} vagas restantes)</span>
                         <input
                           type="file"
                           multiple
                           accept="image/*"
                           className="hidden"
                           onChange={e => {
-                            handleFilesUpload(e.target.files);
+                            const files = Array.from(e.target.files || []);
                             e.target.value = '';
+                            if (files.length > 0) {
+                              handleFilesUpload(files);
+                            }
                           }}
                         />
                       </label>
