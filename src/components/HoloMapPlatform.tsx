@@ -2955,137 +2955,61 @@ export default function HoloMapPlatform() {
               {(() => {
                 const pointImages = getPointAllImages(selectedPoint);
 
-                const handleFilesUpload = async (fileList: FileList | null) => {
-                  if (!fileList || !selectedPoint || isUploadingPhotos) return;
-                  const files = Array.from(fileList);
-                  if (files.length === 0) return;
-
-                  // Aceita imagens comuns e extensões conhecidas de fotos
-                  const valid = files.filter(f => 
-                    f.type.startsWith('image/') || 
-                    /\.(jpe?g|png|webp|gif|bmp|heic|heif|svg)$/i.test(f.name)
-                  );
-
-                  if (valid.length === 0) {
-                    showToast('Selecione arquivos de imagem válidos (JPG, PNG, WebP, etc.).', 'error');
+                const handleFilesUpload = (fileList: FileList | null) => {
+                  if (!fileList || !selectedPoint) return;
+                  const files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
+                  if (files.length === 0) {
+                    showToast('Selecione imagens válidas (JPG, PNG, etc.)', 'error');
                     return;
                   }
 
-                  setIsUploadingPhotos(true);
-                  showToast(`Processando ${valid.length} foto(s)...`, 'info');
+                  const pointId = selectedPoint.id;
+                  const MAX_FOTOS = 10;
 
-                  // Função ultra-rápida e leve: comprime para máx 640px com JPEG 65% (~25KB a 35KB por foto)
-                  // Usa URL.createObjectURL em vez de FileReader para consumir ZERO memória desnecessária
-                  const compressOneFile = (file: File): Promise<string | null> => {
-                    return new Promise((resolve) => {
-                      const timeout = setTimeout(() => {
-                        cleanup();
-                        resolve(null);
-                      }, 5000);
-
-                      let objectUrl = '';
-                      try {
-                        objectUrl = URL.createObjectURL(file);
-                      } catch (_) {
-                        clearTimeout(timeout);
-                        resolve(null);
+                  // Lê arquivo a arquivo sequencialmente com FileReader simples
+                  const readNext = (index: number, accumulated: string[]) => {
+                    if (index >= files.length) {
+                      // Fim — atualiza estado com tudo que foi lido
+                      if (accumulated.length === 0) {
+                        showToast('Nenhuma foto pôde ser lida.', 'error');
                         return;
                       }
-
-                      const img = new Image();
-                      const cleanup = () => {
-                        clearTimeout(timeout);
-                        try { URL.revokeObjectURL(objectUrl); } catch (_) {}
-                      };
-
-                      img.onload = () => {
-                        try {
-                          const MAX_DIM = 640;
-                          let w = img.width || 640;
-                          let h = img.height || 480;
-                          if (w > MAX_DIM || h > MAX_DIM) {
-                            if (w > h) {
-                              h = Math.round((h * MAX_DIM) / w);
-                              w = MAX_DIM;
-                            } else {
-                              w = Math.round((w * MAX_DIM) / h);
-                              h = MAX_DIM;
-                            }
-                          }
-
-                          const canvas = document.createElement('canvas');
-                          canvas.width = w;
-                          canvas.height = h;
-                          const ctx = canvas.getContext('2d');
-                          if (!ctx) {
-                            cleanup();
-                            resolve(null);
-                            return;
-                          }
-
-                          ctx.imageSmoothingEnabled = true;
-                          ctx.imageSmoothingQuality = 'medium';
-                          ctx.drawImage(img, 0, 0, w, h);
-                          const dataUrl = canvas.toDataURL('image/jpeg', 0.65);
-                          cleanup();
-                          resolve(dataUrl);
-                        } catch (err) {
-                          cleanup();
-                          resolve(null);
+                      setSelectedPoint(prev => {
+                        if (!prev) return prev;
+                        const existing = getPointAllImages(prev);
+                        const slots = MAX_FOTOS - existing.length;
+                        if (slots <= 0) {
+                          showToast(`Limite de ${MAX_FOTOS} fotos atingido.`, 'info');
+                          return prev;
                         }
-                      };
-
-                      img.onerror = () => {
-                        cleanup();
-                        resolve(null);
-                      };
-
-                      img.src = objectUrl;
-                    });
-                  };
-
-                  try {
-                    // Processa sequencialmente com intervalo de respiro para a thread do navegador
-                    const compressedPhotos: string[] = [];
-                    for (let i = 0; i < valid.length; i++) {
-                      const res = await compressOneFile(valid[i]);
-                      if (res) {
-                        compressedPhotos.push(res);
-                      }
-                      // Pausa breve para o navegador respirar e não travar a interface
-                      await new Promise(r => setTimeout(r, 10));
-                    }
-
-                    if (compressedPhotos.length === 0) {
-                      showToast('Não foi possível ler as imagens. Tente outros arquivos.', 'error');
-                      setIsUploadingPhotos(false);
+                        const combined = [...existing, ...accumulated.slice(0, slots)];
+                        return { ...prev, imagemUrl: combined[0], imagens: combined };
+                      });
+                      setObjetos(prev => prev.map(o => {
+                        if (o.id !== pointId) return o;
+                        const existing = getPointAllImages(o);
+                        const slots = MAX_FOTOS - existing.length;
+                        if (slots <= 0) return o;
+                        const combined = [...existing, ...accumulated.slice(0, slots)];
+                        return { ...o, imagemUrl: combined[0], imagens: combined };
+                      }));
+                      showToast(`${accumulated.length} foto(s) adicionada(s)!`, 'success');
                       return;
                     }
 
-                    const pointId = selectedPoint.id;
-                    setSelectedPoint(prev => {
-                      if (!prev) return prev;
-                      const existing = getPointAllImages(prev);
-                      const unique = compressedPhotos.filter(b => !existing.includes(b));
-                      const combined = [...existing, ...unique];
-                      return { ...prev, imagemUrl: combined[0], imagens: combined };
-                    });
+                    const reader = new FileReader();
+                    reader.onload = ev => {
+                      const result = ev.target?.result as string;
+                      if (result) accumulated.push(result);
+                      readNext(index + 1, accumulated);
+                    };
+                    reader.onerror = () => {
+                      readNext(index + 1, accumulated); // pula e continua
+                    };
+                    reader.readAsDataURL(files[index]);
+                  };
 
-                    setObjetos(prev => prev.map(o => {
-                      if (o.id !== pointId) return o;
-                      const existing = getPointAllImages(o);
-                      const unique = compressedPhotos.filter(b => !existing.includes(b));
-                      const combined = [...existing, ...unique];
-                      return { ...o, imagemUrl: combined[0], imagens: combined };
-                    }));
-
-                    showToast(`${compressedPhotos.length} foto(s) adicionada(s) com sucesso!`, 'success');
-                  } catch (err) {
-                    console.error('Erro no upload de fotos:', err);
-                    showToast('Erro ao processar as fotos.', 'error');
-                  } finally {
-                    setIsUploadingPhotos(false);
-                  }
+                  readNext(0, []);
                 };
 
                 const handleAddUrl = (url: string) => {
@@ -3204,27 +3128,13 @@ export default function HoloMapPlatform() {
 
                     {/* Botões para Adicionar Mais Fotos (Upload múltiplo ou URL) */}
                     <div className="p-2.5 rounded-xl bg-black/20 border border-dashed border-white/20 hover:border-[#F4B205]/50 transition space-y-2">
-                      <label className={`w-full flex items-center justify-center gap-2 py-1.5 px-2 rounded-lg text-xs font-bold transition ${
-                        isUploadingPhotos
-                          ? 'bg-white/5 text-gray-400 cursor-not-allowed'
-                          : 'bg-white/5 hover:bg-white/10 text-white cursor-pointer'
-                      }`}>
-                        {isUploadingPhotos ? (
-                          <>
-                            <div className="w-3.5 h-3.5 border-2 border-[#F4B205] border-t-transparent rounded-full animate-spin" />
-                            <span className="text-[#F4B205]">Processando fotos...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Upload size={14} className="text-[#F4B205]" />
-                            <span>Carregar Fotos (selecione várias)</span>
-                          </>
-                        )}
+                      <label className="w-full flex items-center justify-center gap-2 py-1.5 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-white cursor-pointer text-xs font-bold transition">
+                        <Upload size={14} className="text-[#F4B205]" />
+                        <span>Carregar Fotos (até {10 - pointImages.length} vagas)</span>
                         <input
                           type="file"
                           multiple
-                          accept="image/*,.heic,.heif"
-                          disabled={isUploadingPhotos}
+                          accept="image/*"
                           className="hidden"
                           onChange={e => {
                             handleFilesUpload(e.target.files);
