@@ -445,6 +445,7 @@ export default function HoloMapPlatform() {
   const [isLocating, setIsLocating] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [isTrackingLocation, setIsTrackingLocation] = useState(false);
+  const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -521,7 +522,16 @@ export default function HoloMapPlatform() {
       localStorage.setItem('nugep_ui_scale', uiScale);
       localStorage.setItem('nugep_points_v4', JSON.stringify(objetos));
       localStorage.setItem('nugep_territories_v4', JSON.stringify(demarcatedTerritories));
-    } catch (e) {}
+    } catch (e) {
+      try {
+        // Fallback se localStorage estiver cheio: salva com imagens limitadas para não quebrar a persistência
+        const compactPoints = objetos.map(o => ({
+          ...o,
+          imagens: o.imagens?.slice(0, 3)
+        }));
+        localStorage.setItem('nugep_points_v4', JSON.stringify(compactPoints));
+      } catch (_) {}
+    }
   }, [theme, uiScale, objetos, demarcatedTerritories, isHydrated]);
 
   useEffect(() => () => {
@@ -2946,77 +2956,135 @@ export default function HoloMapPlatform() {
                 const pointImages = getPointAllImages(selectedPoint);
 
                 const handleFilesUpload = async (fileList: FileList | null) => {
-                  if (!fileList || !selectedPoint) return;
+                  if (!fileList || !selectedPoint || isUploadingPhotos) return;
                   const files = Array.from(fileList);
                   if (files.length === 0) return;
-                  const valid = files.filter(f => f.type.startsWith('image/') && f.size <= 20 * 1024 * 1024);
-                  if (valid.length < files.length) {
-                    showToast(`${files.length - valid.length} arquivo(s) ignorado(s) (não é imagem ou passou de 20MB).`, 'info');
-                  }
-                  if (valid.length === 0) return;
 
+                  // Aceita imagens comuns e extensões conhecidas de fotos
+                  const valid = files.filter(f => 
+                    f.type.startsWith('image/') || 
+                    /\.(jpe?g|png|webp|gif|bmp|heic|heif|svg)$/i.test(f.name)
+                  );
+
+                  if (valid.length === 0) {
+                    showToast('Selecione arquivos de imagem válidos (JPG, PNG, WebP, etc.).', 'error');
+                    return;
+                  }
+
+                  setIsUploadingPhotos(true);
                   showToast(`Processando ${valid.length} foto(s)...`, 'info');
 
-                  // Comprime e redimensiona cada imagem via canvas (máx 1200x900, JPEG 80%)
-                  // Isso evita travar o navegador com base64 brutas de vários MB
-                  const compressImage = (file: File): Promise<string> =>
-                    new Promise((resolve, reject) => {
-                      const reader = new FileReader();
-                      reader.onerror = reject;
-                      reader.onload = ev => {
-                        const img = new Image();
-                        img.onerror = reject;
-                        img.onload = () => {
-                          const MAX_W = 1200;
-                          const MAX_H = 900;
-                          let { width, height } = img;
-                          if (width > MAX_W || height > MAX_H) {
-                            const ratio = Math.min(MAX_W / width, MAX_H / height);
-                            width = Math.round(width * ratio);
-                            height = Math.round(height * ratio);
-                          }
-                          const canvas = document.createElement('canvas');
-                          canvas.width = width;
-                          canvas.height = height;
-                          const ctx = canvas.getContext('2d');
-                          if (!ctx) { resolve(ev.target?.result as string); return; }
-                          ctx.drawImage(img, 0, 0, width, height);
-                          resolve(canvas.toDataURL('image/jpeg', 0.80));
-                        };
-                        img.src = ev.target?.result as string;
+                  // Função ultra-rápida e leve: comprime para máx 640px com JPEG 65% (~25KB a 35KB por foto)
+                  // Usa URL.createObjectURL em vez de FileReader para consumir ZERO memória desnecessária
+                  const compressOneFile = (file: File): Promise<string | null> => {
+                    return new Promise((resolve) => {
+                      const timeout = setTimeout(() => {
+                        cleanup();
+                        resolve(null);
+                      }, 5000);
+
+                      let objectUrl = '';
+                      try {
+                        objectUrl = URL.createObjectURL(file);
+                      } catch (_) {
+                        clearTimeout(timeout);
+                        resolve(null);
+                        return;
+                      }
+
+                      const img = new Image();
+                      const cleanup = () => {
+                        clearTimeout(timeout);
+                        try { URL.revokeObjectURL(objectUrl); } catch (_) {}
                       };
-                      reader.readAsDataURL(file);
+
+                      img.onload = () => {
+                        try {
+                          const MAX_DIM = 640;
+                          let w = img.width || 640;
+                          let h = img.height || 480;
+                          if (w > MAX_DIM || h > MAX_DIM) {
+                            if (w > h) {
+                              h = Math.round((h * MAX_DIM) / w);
+                              w = MAX_DIM;
+                            } else {
+                              w = Math.round((w * MAX_DIM) / h);
+                              h = MAX_DIM;
+                            }
+                          }
+
+                          const canvas = document.createElement('canvas');
+                          canvas.width = w;
+                          canvas.height = h;
+                          const ctx = canvas.getContext('2d');
+                          if (!ctx) {
+                            cleanup();
+                            resolve(null);
+                            return;
+                          }
+
+                          ctx.imageSmoothingEnabled = true;
+                          ctx.imageSmoothingQuality = 'medium';
+                          ctx.drawImage(img, 0, 0, w, h);
+                          const dataUrl = canvas.toDataURL('image/jpeg', 0.65);
+                          cleanup();
+                          resolve(dataUrl);
+                        } catch (err) {
+                          cleanup();
+                          resolve(null);
+                        }
+                      };
+
+                      img.onerror = () => {
+                        cleanup();
+                        resolve(null);
+                      };
+
+                      img.src = objectUrl;
                     });
+                  };
 
                   try {
-                    // Processa em lotes de 3 para não travar o navegador
-                    const compressed: string[] = [];
-                    const BATCH = 3;
-                    for (let i = 0; i < valid.length; i += BATCH) {
-                      const batch = valid.slice(i, i + BATCH);
-                      const results = await Promise.all(batch.map(f => compressImage(f)));
-                      compressed.push(...results);
+                    // Processa sequencialmente com intervalo de respiro para a thread do navegador
+                    const compressedPhotos: string[] = [];
+                    for (let i = 0; i < valid.length; i++) {
+                      const res = await compressOneFile(valid[i]);
+                      if (res) {
+                        compressedPhotos.push(res);
+                      }
+                      // Pausa breve para o navegador respirar e não travar a interface
+                      await new Promise(r => setTimeout(r, 10));
+                    }
+
+                    if (compressedPhotos.length === 0) {
+                      showToast('Não foi possível ler as imagens. Tente outros arquivos.', 'error');
+                      setIsUploadingPhotos(false);
+                      return;
                     }
 
                     const pointId = selectedPoint.id;
                     setSelectedPoint(prev => {
                       if (!prev) return prev;
                       const existing = getPointAllImages(prev);
-                      const unique = compressed.filter(b => !existing.includes(b));
+                      const unique = compressedPhotos.filter(b => !existing.includes(b));
                       const combined = [...existing, ...unique];
                       return { ...prev, imagemUrl: combined[0], imagens: combined };
                     });
+
                     setObjetos(prev => prev.map(o => {
                       if (o.id !== pointId) return o;
                       const existing = getPointAllImages(o);
-                      const unique = compressed.filter(b => !existing.includes(b));
+                      const unique = compressedPhotos.filter(b => !existing.includes(b));
                       const combined = [...existing, ...unique];
                       return { ...o, imagemUrl: combined[0], imagens: combined };
                     }));
-                    showToast(`${compressed.length} foto(s) adicionada(s)!`, 'success');
+
+                    showToast(`${compressedPhotos.length} foto(s) adicionada(s) com sucesso!`, 'success');
                   } catch (err) {
-                    console.error('Erro ao processar imagens:', err);
-                    showToast('Erro ao processar as imagens. Tente novamente.', 'error');
+                    console.error('Erro no upload de fotos:', err);
+                    showToast('Erro ao processar as fotos.', 'error');
+                  } finally {
+                    setIsUploadingPhotos(false);
                   }
                 };
 
@@ -3136,13 +3204,27 @@ export default function HoloMapPlatform() {
 
                     {/* Botões para Adicionar Mais Fotos (Upload múltiplo ou URL) */}
                     <div className="p-2.5 rounded-xl bg-black/20 border border-dashed border-white/20 hover:border-[#F4B205]/50 transition space-y-2">
-                      <label className="w-full cursor-pointer flex items-center justify-center gap-2 py-1 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-xs font-bold transition">
-                        <Upload size={14} className="text-[#F4B205]" />
-                        <span>Carregar Fotos (selecione várias)</span>
+                      <label className={`w-full flex items-center justify-center gap-2 py-1.5 px-2 rounded-lg text-xs font-bold transition ${
+                        isUploadingPhotos
+                          ? 'bg-white/5 text-gray-400 cursor-not-allowed'
+                          : 'bg-white/5 hover:bg-white/10 text-white cursor-pointer'
+                      }`}>
+                        {isUploadingPhotos ? (
+                          <>
+                            <div className="w-3.5 h-3.5 border-2 border-[#F4B205] border-t-transparent rounded-full animate-spin" />
+                            <span className="text-[#F4B205]">Processando fotos...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload size={14} className="text-[#F4B205]" />
+                            <span>Carregar Fotos (selecione várias)</span>
+                          </>
+                        )}
                         <input
                           type="file"
                           multiple
-                          accept="image/*"
+                          accept="image/*,.heic,.heif"
+                          disabled={isUploadingPhotos}
                           className="hidden"
                           onChange={e => {
                             handleFilesUpload(e.target.files);
