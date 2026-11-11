@@ -391,6 +391,7 @@ export default function HoloMapPlatform() {
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const searchRequestRef = useRef(0);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
+  const watchIdRef = useRef<number | null>(null);
 
   // Estados principais
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
@@ -442,6 +443,8 @@ export default function HoloMapPlatform() {
   const [searchSuggestions, setSearchSuggestions] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
+  const [isTrackingLocation, setIsTrackingLocation] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -523,6 +526,7 @@ export default function HoloMapPlatform() {
 
   useEffect(() => () => {
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
   }, []);
 
   // Atalhos de teclado globais (⌘K / Ctrl+K para busca e ESC para fechar)
@@ -769,27 +773,69 @@ export default function HoloMapPlatform() {
     }
   };
 
+  const stopTracking = () => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    setIsTrackingLocation(false);
+  };
+
   const locateUser = () => {
     if (!navigator.geolocation) {
       showToast('A localização não é compatível com este navegador.', 'error');
       return;
     }
+
+    // Se já está rastreando, para o rastreamento
+    if (isTrackingLocation) {
+      stopTracking();
+      setUserLocation(null);
+      showToast('Rastreamento de localização encerrado.', 'info');
+      return;
+    }
+
     setIsLocating(true);
+    // Primeira leitura rápida para centralizar o mapa
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
-        const { latitude: lat, longitude: lng } = coords;
-        setViewState(prev => ({ ...prev, latitude: lat, longitude: lng, zoom: 16, pitch: 45 }));
-        setSearchedLocation({ lat, lng, label: 'Sua localização' });
+        const { latitude: lat, longitude: lng, accuracy } = coords;
+        setViewState(prev => ({ ...prev, latitude: lat, longitude: lng, zoom: 17, pitch: 0 }));
+        setUserLocation({ lat, lng, accuracy });
         setIsLocating(false);
-        showToast('Localização encontrada.', 'success');
+        setIsTrackingLocation(true);
+        showToast(`Localização encontrada (precisão: ${Math.round(accuracy)}m)`, 'success');
+
+        // Rastreamento contínuo via watchPosition (atualiza o ponto azul ao se mover)
+        const id = navigator.geolocation.watchPosition(
+          ({ coords: c }) => {
+            setUserLocation({ lat: c.latitude, lng: c.longitude, accuracy: c.accuracy });
+          },
+          (err) => {
+            if (err.code === err.PERMISSION_DENIED) {
+              stopTracking();
+              setUserLocation(null);
+              showToast('Permissão de localização negada.', 'error');
+            }
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+        watchIdRef.current = id;
       },
-      () => {
+      (err) => {
         setIsLocating(false);
-        showToast('Não foi possível acessar sua localização. Verifique a permissão do navegador.', 'error');
+        if (err.code === err.PERMISSION_DENIED) {
+          showToast('Permissão de localização negada. Habilite nas configurações do navegador.', 'error');
+        } else if (err.code === err.POSITION_UNAVAILABLE) {
+          showToast('Sinal de GPS fraco. Tente ao ar livre.', 'error');
+        } else {
+          showToast('Tempo esgotado. Verifique o GPS ou a conexão.', 'error');
+        }
       },
-      { enableHighAccuracy: true, timeout: 9000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   };
+
 
   // Busca por endereço, território, ponto cultural ou coordenadas com debounce
   const handleSearchInput = (value: string) => {
@@ -1636,11 +1682,15 @@ export default function HoloMapPlatform() {
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); locateUser(); }}
-              className="p-1.5 rounded-full hover:bg-white/10 text-[#F4B205] transition-all hover:scale-110 disabled:opacity-50"
-              title="Usar minha localização"
+              className={`p-1.5 rounded-full transition-all hover:scale-110 disabled:opacity-50 ${
+                isTrackingLocation
+                  ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
+                  : 'hover:bg-white/10 text-[#F4B205]'
+              }`}
+              title={isTrackingLocation ? 'Parar rastreamento de localização' : 'Usar minha localização'}
               disabled={isLocating}
             >
-              <LocateFixed size={15} className={isLocating ? 'animate-spin' : ''} />
+              <LocateFixed size={15} className={isLocating ? 'animate-spin' : isTrackingLocation ? 'text-blue-400' : ''} />
             </button>
 
             {/* Indicador de Atalho Moderno */}
@@ -2540,6 +2590,30 @@ export default function HoloMapPlatform() {
                     <MapPin size={16} strokeWidth={2.5} />
                   </div>
                   <div className="w-1.5 h-1.5 bg-[#F4B205] rounded-full shadow-sm mt-0.5" />
+                </div>
+              </div>
+            </Marker>
+          )}
+
+          {/* ===============================================================
+              PONTO AZUL DE LOCALIZAÇÃO AO VIVO — IDÊNTICO AO GOOGLE MAPS
+              Círculo azul pulsante no centro + halo de precisão translúcido.
+              =============================================================== */}
+          {userLocation && (
+            <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
+              <div className="relative flex items-center justify-center select-none pointer-events-none">
+                {/* Círculo de precisão (cresce conforme a precisão do GPS piora) */}
+                <div
+                  className="absolute rounded-full bg-blue-500/15 border border-blue-400/30"
+                  style={{
+                    width: `${Math.min(Math.max(userLocation.accuracy / 2, 20), 120)}px`,
+                    height: `${Math.min(Math.max(userLocation.accuracy / 2, 20), 120)}px`,
+                  }}
+                />
+                {/* Ponto azul com pulso — idêntico ao Google Maps */}
+                <div className="relative w-5 h-5 flex items-center justify-center">
+                  <div className="absolute w-5 h-5 rounded-full bg-blue-500/30 animate-ping" />
+                  <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow-[0_0_0_2px_rgba(59,130,246,0.3)] z-10" />
                 </div>
               </div>
             </Marker>
