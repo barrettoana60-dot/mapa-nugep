@@ -2949,44 +2949,74 @@ export default function HoloMapPlatform() {
                   if (!fileList || !selectedPoint) return;
                   const files = Array.from(fileList);
                   if (files.length === 0) return;
-                  const valid = files.filter(f => f.type.startsWith('image/') && f.size <= 15 * 1024 * 1024);
+                  const valid = files.filter(f => f.type.startsWith('image/') && f.size <= 20 * 1024 * 1024);
                   if (valid.length < files.length) {
-                    showToast(`${files.length - valid.length} arquivo(s) ignorado(s) (não é imagem ou passou de 15MB).`, 'info');
+                    showToast(`${files.length - valid.length} arquivo(s) ignorado(s) (não é imagem ou passou de 20MB).`, 'info');
                   }
                   if (valid.length === 0) return;
 
-                  showToast(`Carregando ${valid.length} foto(s)...`, 'info');
+                  showToast(`Processando ${valid.length} foto(s)...`, 'info');
 
-                  // Lê todos os arquivos em paralelo, de forma confiável
-                  const readAsBase64 = (file: File): Promise<string> =>
+                  // Comprime e redimensiona cada imagem via canvas (máx 1200x900, JPEG 80%)
+                  // Isso evita travar o navegador com base64 brutas de vários MB
+                  const compressImage = (file: File): Promise<string> =>
                     new Promise((resolve, reject) => {
                       const reader = new FileReader();
-                      reader.onload = ev => resolve(ev.target?.result as string);
                       reader.onerror = reject;
+                      reader.onload = ev => {
+                        const img = new Image();
+                        img.onerror = reject;
+                        img.onload = () => {
+                          const MAX_W = 1200;
+                          const MAX_H = 900;
+                          let { width, height } = img;
+                          if (width > MAX_W || height > MAX_H) {
+                            const ratio = Math.min(MAX_W / width, MAX_H / height);
+                            width = Math.round(width * ratio);
+                            height = Math.round(height * ratio);
+                          }
+                          const canvas = document.createElement('canvas');
+                          canvas.width = width;
+                          canvas.height = height;
+                          const ctx = canvas.getContext('2d');
+                          if (!ctx) { resolve(ev.target?.result as string); return; }
+                          ctx.drawImage(img, 0, 0, width, height);
+                          resolve(canvas.toDataURL('image/jpeg', 0.80));
+                        };
+                        img.src = ev.target?.result as string;
+                      };
                       reader.readAsDataURL(file);
                     });
 
                   try {
-                    const newBase64s = await Promise.all(valid.map(f => readAsBase64(f)));
+                    // Processa em lotes de 3 para não travar o navegador
+                    const compressed: string[] = [];
+                    const BATCH = 3;
+                    for (let i = 0; i < valid.length; i += BATCH) {
+                      const batch = valid.slice(i, i + BATCH);
+                      const results = await Promise.all(batch.map(f => compressImage(f)));
+                      compressed.push(...results);
+                    }
 
-                    // Usa callback funcional para sempre pegar o estado mais recente
+                    const pointId = selectedPoint.id;
                     setSelectedPoint(prev => {
                       if (!prev) return prev;
                       const existing = getPointAllImages(prev);
-                      const unique = newBase64s.filter(b => !existing.includes(b));
+                      const unique = compressed.filter(b => !existing.includes(b));
                       const combined = [...existing, ...unique];
                       return { ...prev, imagemUrl: combined[0], imagens: combined };
                     });
                     setObjetos(prev => prev.map(o => {
-                      if (o.id !== selectedPoint.id) return o;
+                      if (o.id !== pointId) return o;
                       const existing = getPointAllImages(o);
-                      const unique = newBase64s.filter(b => !existing.includes(b));
+                      const unique = compressed.filter(b => !existing.includes(b));
                       const combined = [...existing, ...unique];
                       return { ...o, imagemUrl: combined[0], imagens: combined };
                     }));
-                    showToast(`${newBase64s.length} foto(s) adicionada(s) com sucesso!`, 'success');
-                  } catch {
-                    showToast('Erro ao ler as imagens. Tente novamente.', 'error');
+                    showToast(`${compressed.length} foto(s) adicionada(s)!`, 'success');
+                  } catch (err) {
+                    console.error('Erro ao processar imagens:', err);
+                    showToast('Erro ao processar as imagens. Tente novamente.', 'error');
                   }
                 };
 
