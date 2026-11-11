@@ -2945,41 +2945,49 @@ export default function HoloMapPlatform() {
               {(() => {
                 const pointImages = getPointAllImages(selectedPoint);
 
-                const handleFilesUpload = (fileList: FileList | null) => {
+                const handleFilesUpload = async (fileList: FileList | null) => {
                   if (!fileList || !selectedPoint) return;
                   const files = Array.from(fileList);
                   if (files.length === 0) return;
-                  const valid = files.filter(f => f.size <= 10 * 1024 * 1024);
+                  const valid = files.filter(f => f.type.startsWith('image/') && f.size <= 15 * 1024 * 1024);
                   if (valid.length < files.length) {
-                    showToast('Algumas fotos tinham mais de 10MB e foram ignoradas.', 'info');
+                    showToast(`${files.length - valid.length} arquivo(s) ignorado(s) (não é imagem ou passou de 15MB).`, 'info');
                   }
                   if (valid.length === 0) return;
 
-                  let processed = 0;
-                  const newBase64s: string[] = [];
+                  showToast(`Carregando ${valid.length} foto(s)...`, 'info');
 
-                  valid.forEach(file => {
-                    const reader = new FileReader();
-                    reader.onload = ev => {
-                      const base64 = ev.target?.result as string;
-                      if (base64 && !pointImages.includes(base64) && !newBase64s.includes(base64)) {
-                        newBase64s.push(base64);
-                      }
-                      processed++;
-                      if (processed === valid.length) {
-                        const combined = [...pointImages, ...newBase64s];
-                        const updated: ObjetoCultural = {
-                          ...selectedPoint,
-                          imagemUrl: combined[0],
-                          imagens: combined
-                        };
-                        setSelectedPoint(updated);
-                        setObjetos(prev => prev.map(o => o.id === selectedPoint.id ? updated : o));
-                        showToast(`${newBase64s.length} foto(s) adicionada(s)!`, 'success');
-                      }
-                    };
-                    reader.readAsDataURL(file);
-                  });
+                  // Lê todos os arquivos em paralelo, de forma confiável
+                  const readAsBase64 = (file: File): Promise<string> =>
+                    new Promise((resolve, reject) => {
+                      const reader = new FileReader();
+                      reader.onload = ev => resolve(ev.target?.result as string);
+                      reader.onerror = reject;
+                      reader.readAsDataURL(file);
+                    });
+
+                  try {
+                    const newBase64s = await Promise.all(valid.map(f => readAsBase64(f)));
+
+                    // Usa callback funcional para sempre pegar o estado mais recente
+                    setSelectedPoint(prev => {
+                      if (!prev) return prev;
+                      const existing = getPointAllImages(prev);
+                      const unique = newBase64s.filter(b => !existing.includes(b));
+                      const combined = [...existing, ...unique];
+                      return { ...prev, imagemUrl: combined[0], imagens: combined };
+                    });
+                    setObjetos(prev => prev.map(o => {
+                      if (o.id !== selectedPoint.id) return o;
+                      const existing = getPointAllImages(o);
+                      const unique = newBase64s.filter(b => !existing.includes(b));
+                      const combined = [...existing, ...unique];
+                      return { ...o, imagemUrl: combined[0], imagens: combined };
+                    }));
+                    showToast(`${newBase64s.length} foto(s) adicionada(s) com sucesso!`, 'success');
+                  } catch {
+                    showToast('Erro ao ler as imagens. Tente novamente.', 'error');
+                  }
                 };
 
                 const handleAddUrl = (url: string) => {
